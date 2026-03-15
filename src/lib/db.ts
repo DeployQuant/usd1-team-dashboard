@@ -16,6 +16,20 @@ export function getDb(): Database.Database {
   return db;
 }
 
+export function auditLog(
+  db: Database.Database,
+  userId: number,
+  userName: string,
+  actionType: string,
+  details: object,
+  targetType?: string,
+  targetId?: number
+) {
+  db.prepare(
+    "INSERT INTO audit_log (user_id, user_name, action_type, details, target_type, target_id) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(userId, userName, actionType, JSON.stringify(details), targetType || null, targetId || null);
+}
+
 function initDb(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS teams (
@@ -25,6 +39,23 @@ function initDb(db: Database.Database) {
       password_hash TEXT NOT NULL,
       pillar TEXT,
       description TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      display_name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      must_change_password INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS user_teams (
+      user_id INTEGER NOT NULL,
+      team_id INTEGER NOT NULL,
+      PRIMARY KEY (user_id, team_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (team_id) REFERENCES teams(id)
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
@@ -57,6 +88,8 @@ function initDb(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id INTEGER NOT NULL,
+      user_id INTEGER,
+      user_name TEXT NOT NULL,
       team_name TEXT NOT NULL,
       team_slug TEXT NOT NULL,
       content TEXT NOT NULL,
@@ -73,6 +106,17 @@ function initDb(db: Database.Database) {
       FOREIGN KEY (task_id) REFERENCES tasks(id),
       UNIQUE(task_id, depends_on_team_slug)
     );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      user_name TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      details TEXT DEFAULT '{}',
+      target_type TEXT,
+      target_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Check if teams are already seeded
@@ -82,65 +126,95 @@ function initDb(db: Database.Database) {
   }
 }
 
+// Temporary passwords for each user
+const USER_PASSWORDS: Record<string, string> = {
+  "yufeng": "Wlfi-YuF3ng!24",
+  "corey": "Wlfi-C0r3y!24",
+  "chaofan": "Wlfi-Ch40f@n!24",
+  "hanzhi": "Wlfi-H4nzh1!24",
+  "yanju": "Wlfi-Y4nju!24",
+  "boga": "Wlfi-B0g4!24",
+  "serhan": "Wlfi-S3rh4n!24",
+  "buji": "Wlfi-Buj1!24",
+  "zak": "Wlfi-Z4k!24",
+  "zach": "Wlfi-Z4ch!24",
+  "justin": "Wlfi-Just1n!24",
+  "jack": "Wlfi-J4ck!24",
+  "mello": "Wlfi-M3ll0!24",
+  "henry": "Wlfi-H3nry!24",
+  "peter": "Wlfi-P3t3r!24",
+  "jeff": "Wlfi-J3ff!24",
+  "mack": "Wlfi-M4ck!24",
+  "brandi": "Wlfi-Br4nd1!24",
+  "lorena": "Wlfi-L0r3na!24",
+  "ben": "Wlfi-B3n!24",
+  "shawn": "Wlfi-Sh4wn!24",
+  "chase": "Wlfi-Ch4s3!24",
+  "ryan": "Wlfi-Ry4n!24",
+};
+
 function seedData(db: Database.Database) {
   const teams = [
-    {
-      name: "Leadership",
-      slug: "leadership",
-      password: "wlfi-lead-2026",
-      pillar: "All Pillars",
-      description: "Executive oversight across all pillars",
-    },
-    {
-      name: "Engineering",
-      slug: "engineering",
-      password: "wlfi-eng-2026",
-      pillar: "Pillar 1",
-      description: "Agent-Native Technical Infrastructure",
-    },
-    {
-      name: "Business Development",
-      slug: "bd",
-      password: "wlfi-bd-2026",
-      pillar: "Pillar 2",
-      description: "BD & Partnership Execution",
-    },
-    {
-      name: "DeFi/Exchange",
-      slug: "defi",
-      password: "wlfi-defi-2026",
-      pillar: "Pillar 3",
-      description: "DeFi & Exchange Liquidity",
-    },
-    {
-      name: "Legal & Compliance",
-      slug: "legal",
-      password: "wlfi-legal-2026",
-      pillar: "Pillar 4",
-      description: "Legal, Regulatory & Compliance",
-    },
-    {
-      name: "Marketing",
-      slug: "marketing",
-      password: "wlfi-mktg-2026",
-      pillar: "Pillar 5",
-      description: "Marketing Execution",
-    },
+    { name: "Leadership", slug: "leadership", password: "wlfi-lead-2026", pillar: "All Pillars", description: "Executive oversight across all pillars" },
+    { name: "Engineering", slug: "engineering", password: "wlfi-eng-2026", pillar: "Pillar 1", description: "Agent-Native Technical Infrastructure" },
+    { name: "Business Development", slug: "bd", password: "wlfi-bd-2026", pillar: "Pillar 2", description: "BD & Partnership Execution" },
+    { name: "DeFi/Exchange", slug: "defi", password: "wlfi-defi-2026", pillar: "Pillar 3", description: "DeFi & Exchange Liquidity" },
+    { name: "Legal & Compliance", slug: "legal", password: "wlfi-legal-2026", pillar: "Pillar 4", description: "Legal, Regulatory & Compliance" },
+    { name: "Marketing", slug: "marketing", password: "wlfi-mktg-2026", pillar: "Pillar 5", description: "Marketing Execution" },
   ];
 
-  const insertTeam = db.prepare(
-    "INSERT INTO teams (name, slug, password_hash, pillar, description) VALUES (?, ?, ?, ?, ?)"
-  );
-
+  const insertTeam = db.prepare("INSERT INTO teams (name, slug, password_hash, pillar, description) VALUES (?, ?, ?, ?, ?)");
   const teamIds: Record<string, number> = {};
-
   for (const t of teams) {
     const hash = bcryptjs.hashSync(t.password, 10);
     const result = insertTeam.run(t.name, t.slug, hash, t.pillar, t.description);
     teamIds[t.slug] = result.lastInsertRowid as number;
   }
 
-  // Seed tasks for each team
+  // Seed users
+  const userTeamMap: { username: string; displayName: string; teams: string[] }[] = [
+    { username: "yufeng", displayName: "Yu Feng", teams: ["engineering"] },
+    { username: "corey", displayName: "Corey", teams: ["engineering"] },
+    { username: "chaofan", displayName: "Chaofan", teams: ["engineering"] },
+    { username: "hanzhi", displayName: "Hanzhi", teams: ["engineering"] },
+    { username: "yanju", displayName: "Yanju", teams: ["engineering"] },
+    { username: "boga", displayName: "Boga", teams: ["engineering"] },
+    { username: "serhan", displayName: "Serhan", teams: ["engineering"] },
+    { username: "buji", displayName: "Buji", teams: ["engineering"] },
+    { username: "zak", displayName: "Zak", teams: ["bd", "leadership"] },
+    { username: "zach", displayName: "Zach", teams: ["bd", "leadership"] },
+    { username: "justin", displayName: "Justin", teams: ["defi"] },
+    { username: "jack", displayName: "Jack", teams: ["defi"] },
+    { username: "mello", displayName: "Mello", teams: ["defi"] },
+    { username: "henry", displayName: "Henry", teams: ["defi"] },
+    { username: "peter", displayName: "Peter", teams: ["defi"] },
+    { username: "jeff", displayName: "Jeff", teams: ["defi"] },
+    { username: "mack", displayName: "Mack", teams: ["legal"] },
+    { username: "brandi", displayName: "Brandi", teams: ["legal"] },
+    { username: "lorena", displayName: "Lorena", teams: ["legal"] },
+    { username: "ben", displayName: "Ben", teams: ["legal"] },
+    { username: "shawn", displayName: "Shawn", teams: ["marketing"] },
+    { username: "chase", displayName: "Chase", teams: ["leadership"] },
+    { username: "ryan", displayName: "Ryan", teams: ["leadership"] },
+  ];
+
+  const insertUser = db.prepare("INSERT INTO users (name, display_name, password_hash, must_change_password) VALUES (?, ?, ?, 1)");
+  const insertUserTeam = db.prepare("INSERT INTO user_teams (user_id, team_id) VALUES (?, ?)");
+
+  const seedUsersTransaction = db.transaction(() => {
+    for (const u of userTeamMap) {
+      const pw = USER_PASSWORDS[u.username] || "Wlfi-Default!24";
+      const hash = bcryptjs.hashSync(pw, 10);
+      const result = insertUser.run(u.username, u.displayName, hash);
+      const userId = result.lastInsertRowid as number;
+      for (const teamSlug of u.teams) {
+        insertUserTeam.run(userId, teamIds[teamSlug]);
+      }
+    }
+  });
+  seedUsersTransaction();
+
+  // Seed tasks
   const insertTask = db.prepare(
     "INSERT INTO tasks (team_id, deliverable, workstream, status, owner, timeline, category, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
   );
@@ -179,7 +253,6 @@ function seedData(db: Database.Database) {
     { deliverable: "Multi-chain EIP-3009 reference implementation published", workstream: "1.2/1.3", status: "PLANNED", owner: "HANZHI", timeline: "60 days", category: "EIP-3009", priority: "MEDIUM" },
   ].map((t) => ({ ...t, team_id: teamIds["engineering"] }));
 
-  // BD tasks (Pillar 2)
   const bdTasks = [
     { deliverable: "G42 correct counterpart identified for compute billing conversation", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL" },
     { deliverable: "G42 compute billing meeting scheduled", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL" },
@@ -203,7 +276,6 @@ function seedData(db: Database.Database) {
     { deliverable: "Formal MOU or integration announcement with at least 1 sovereign entity", workstream: "2.4", status: "PLANNED", owner: "Unassigned", timeline: "180 days", category: "Direct Relationships", priority: "MEDIUM" },
   ].map((t) => ({ ...t, team_id: teamIds["bd"] }));
 
-  // DeFi/Exchange tasks (Pillar 3)
   const defiTasks = [
     { deliverable: "Wintermute relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL" },
     { deliverable: "Cumberland relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL" },
@@ -234,7 +306,6 @@ function seedData(db: Database.Database) {
     { deliverable: "Binance Earn + OKX Earn USD1 products live", workstream: "3.3", status: "PLANNED", owner: "Unassigned", timeline: "90 days", category: "CEX Listings", priority: "MEDIUM" },
   ].map((t) => ({ ...t, team_id: teamIds["defi"] }));
 
-  // Legal tasks (Pillar 4)
   const legalTasks = [
     { deliverable: "OCC application status memo — open items, conditions, supplemental needs", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL" },
     { deliverable: "Approved public language for OCC application status confirmed", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL" },
@@ -264,7 +335,6 @@ function seedData(db: Database.Database) {
     { deliverable: "GENIUS Act compliance framework cited by at least 1 external source", workstream: "4.3", status: "OPEN", owner: "Unassigned", timeline: "90 days", category: "GENIUS Act", priority: "LOW" },
   ].map((t) => ({ ...t, team_id: teamIds["legal"] }));
 
-  // Marketing tasks (Pillar 5)
   const mktgTasks = [
     { deliverable: "Finalize Core Narrative Framework and Language Standards", workstream: "5.1", status: "OPEN", owner: "Head of Marketing", timeline: "Days 1-7", category: "Phase 1: Foundation", priority: "CRITICAL" },
     { deliverable: "Publish 'USD1: The Agentic Economy's Financial Primitive' positioning post", workstream: "5.1", status: "OPEN", owner: "Content Lead", timeline: "Day 14", category: "Phase 1: Foundation", priority: "HIGH" },

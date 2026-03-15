@@ -3,17 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-const teams = [
-  { slug: "leadership", name: "Leadership", icon: "L", color: "from-amber-500 to-yellow-600", accent: "border-amber-500/40 bg-amber-500/10" },
-  { slug: "engineering", name: "Engineering", icon: "E", color: "from-cyan-400 to-blue-500", accent: "border-cyan-500/40 bg-cyan-500/10" },
-  { slug: "bd", name: "Business Dev", icon: "B", color: "from-emerald-400 to-teal-500", accent: "border-emerald-500/40 bg-emerald-500/10" },
-  { slug: "defi", name: "DeFi / Exchange", icon: "D", color: "from-violet-400 to-purple-500", accent: "border-violet-500/40 bg-violet-500/10" },
-  { slug: "legal", name: "Legal & Compliance", icon: "C", color: "from-rose-400 to-red-500", accent: "border-rose-500/40 bg-rose-500/10" },
-  { slug: "marketing", name: "Marketing", icon: "M", color: "from-orange-400 to-pink-500", accent: "border-orange-500/40 bg-orange-500/10" },
-];
-
 export default function LoginPage() {
-  const [selectedTeam, setSelectedTeam] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,8 +12,8 @@ export default function LoginPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedTeam) {
-      setError("Please select a team");
+    if (!username.trim()) {
+      setError("Please enter your username");
       return;
     }
     setLoading(true);
@@ -31,7 +22,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ team: selectedTeam, password }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -39,7 +30,11 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      router.push("/dashboard");
+      if (data.user.mustChangePassword) {
+        router.push("/set-password");
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       setError("Network error. Please try again.");
       setLoading(false);
@@ -58,7 +53,7 @@ export default function LoginPage() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="w-full max-w-lg relative z-10">
+      <div className="w-full max-w-md relative z-10">
         {/* Logo & Branding */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center mb-6">
@@ -85,34 +80,24 @@ export default function LoginPage() {
           onSubmit={handleLogin}
           className="bg-[#0a1628]/80 backdrop-blur-2xl border border-white/[0.06] rounded-2xl p-8 shadow-2xl glow-border"
         >
-          <div className="mb-6">
-            <label className="block text-xs font-semibold text-slate-400 mb-3 tracking-wider uppercase">
-              Select Team
+          <div className="mb-5">
+            <label htmlFor="username" className="block text-xs font-semibold text-slate-400 mb-2 tracking-wider uppercase">
+              Username
             </label>
-            <div className="grid grid-cols-2 gap-2.5">
-              {teams.map((t) => (
-                <button
-                  key={t.slug}
-                  type="button"
-                  onClick={() => { setSelectedTeam(t.slug); setError(""); }}
-                  className={`group flex items-center gap-2.5 px-3.5 py-3 rounded-xl border text-left text-sm transition-all duration-200 ${
-                    selectedTeam === t.slug
-                      ? `${t.accent} border-opacity-100 shadow-lg`
-                      : "border-white/[0.06] text-slate-400 hover:border-white/[0.12] hover:bg-white/[0.02]"
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
-                    selectedTeam === t.slug
-                      ? `bg-gradient-to-br ${t.color} text-white shadow-sm`
-                      : "bg-white/[0.06] text-slate-500 group-hover:bg-white/[0.1]"
-                  }`}>
-                    {t.icon}
-                  </div>
-                  <span className={`truncate font-medium ${selectedTeam === t.slug ? "text-white" : ""}`}>
-                    {t.name}
-                  </span>
-                </button>
-              ))}
+            <div className="relative">
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                placeholder="Enter your username"
+                className="w-full px-4 py-3.5 bg-white/[0.03] border border-white/[0.08] rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/30 transition-all text-sm"
+                autoComplete="username"
+                autoFocus
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </div>
             </div>
           </div>
 
@@ -126,8 +111,9 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => { setPassword(e.target.value); setError(""); }}
-                placeholder="Enter team password"
+                placeholder="Enter your password"
                 className="w-full px-4 py-3.5 bg-white/[0.03] border border-white/[0.08] rounded-xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/30 transition-all text-sm"
+                autoComplete="current-password"
                 required
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -154,7 +140,7 @@ export default function LoginPage() {
                 Authenticating...
               </span>
             ) : (
-              "Access Dashboard"
+              "Sign In"
             )}
           </button>
         </form>

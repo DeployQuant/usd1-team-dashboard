@@ -7,6 +7,20 @@ import ProgressRing from "@/components/ProgressRing";
 import { LeadershipTimeline } from "@/components/TimelineView";
 import DependencyView from "@/components/DependencyView";
 
+interface TeamInfo {
+  id: number;
+  slug: string;
+  name: string;
+}
+
+interface UserSession {
+  id: number;
+  name: string;
+  teams: TeamInfo[];
+  activeTeam: TeamInfo;
+  mustChangePassword: boolean;
+}
+
 interface Team {
   id: number;
   name: string;
@@ -32,12 +46,13 @@ function getHealthColor(pct: number, blocked: number, critical: number) {
 }
 
 export default function DashboardPage() {
-  const [session, setSession] = useState<{ team: Team } | null>(null);
+  const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<any[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [activeTeamTab, setActiveTeamTab] = useState<string>("overview");
   const [leadershipView, setLeadershipView] = useState<"overview" | "timeline" | "dependencies">("overview");
+  const [showTeamSwitcher, setShowTeamSwitcher] = useState(false);
   const router = useRouter();
 
   const fetchData = useCallback(async (teamSlug: string) => {
@@ -64,8 +79,12 @@ export default function DashboardPage() {
         return;
       }
       const data = await res.json();
-      setSession({ team: data.team });
-      await fetchData(data.team.slug);
+      if (data.user.mustChangePassword) {
+        router.push("/set-password");
+        return;
+      }
+      setUser(data.user);
+      await fetchData(data.user.activeTeam.slug);
       setLoading(false);
     }
     init();
@@ -74,6 +93,23 @@ export default function DashboardPage() {
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/");
+  }
+
+  async function switchTeam(teamSlug: string) {
+    const res = await fetch("/api/auth/switch-team", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teamSlug }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setUser((prev) => prev ? { ...prev, activeTeam: data.activeTeam } : null);
+      setShowTeamSwitcher(false);
+      setTasks([]);
+      setAllTeams([]);
+      setActiveTeamTab("overview");
+      await fetchData(teamSlug);
+    }
   }
 
   if (loading) {
@@ -87,9 +123,10 @@ export default function DashboardPage() {
     );
   }
 
-  if (!session) return null;
+  if (!user) return null;
 
-  const isLeadership = session.team.slug === "leadership";
+  const isLeadership = user.activeTeam.slug === "leadership";
+  const hasMultipleTeams = user.teams.length > 1;
 
   const leadershipOverview = isLeadership
     ? allTeams.map((team) => {
@@ -127,13 +164,57 @@ export default function DashboardPage() {
                   <div className="h-3 w-px bg-white/10" />
                   <span className="text-[10px] text-cyan-400 font-semibold tracking-widest uppercase">USD1</span>
                 </div>
-                <p className="text-[11px] text-slate-500">{session.team.name} {session.team.pillar ? `\u2014 ${session.team.pillar}` : ""}</p>
+                <p className="text-[11px] text-slate-500">{user.activeTeam.name}</p>
               </div>
             </div>
             <div className="flex items-center gap-4">
+              {/* Team Switcher */}
+              {hasMultipleTeams && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowTeamSwitcher(!showTeamSwitcher)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-cyan-400 border border-cyan-500/20 rounded-lg hover:bg-cyan-500/10 transition-all font-medium"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                    Switch Team
+                  </button>
+                  {showTeamSwitcher && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#0d1a2d] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden z-50">
+                      {user.teams.map((t) => (
+                        <button
+                          key={t.slug}
+                          onClick={() => switchTeam(t.slug)}
+                          className={`w-full text-left px-4 py-2.5 text-sm transition-all ${
+                            t.slug === user.activeTeam.slug
+                              ? "bg-cyan-500/10 text-cyan-400 font-semibold"
+                              : "text-slate-300 hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          {t.name}
+                          {t.slug === user.activeTeam.slug && (
+                            <span className="ml-2 text-[10px] text-cyan-500">ACTIVE</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Admin Link (Leadership only) */}
+              {isLeadership && (
+                <button
+                  onClick={() => router.push("/dashboard/admin")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-amber-400 border border-amber-500/20 rounded-lg hover:bg-amber-500/10 transition-all font-medium"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  Admin
+                </button>
+              )}
+
               <div className="text-right hidden sm:block">
                 <p className="text-[10px] text-slate-600 uppercase tracking-wider">Signed in as</p>
-                <p className="text-xs font-semibold text-slate-300">{session.team.name}</p>
+                <p className="text-xs font-semibold text-slate-300">{user.name}</p>
               </div>
               <button
                 onClick={handleLogout}
@@ -249,7 +330,6 @@ export default function DashboardPage() {
                         onClick={() => setActiveTeamTab(team.slug)}
                         className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-5 hover:border-white/[0.1] transition-all duration-300 text-left group glow-border"
                       >
-                        {/* Team Header */}
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex items-center gap-3">
                             <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${config.gradient} flex items-center justify-center text-sm font-bold text-white shadow-lg`}>
@@ -260,7 +340,6 @@ export default function DashboardPage() {
                               <p className="text-[10px] text-slate-500">{team.pillar}</p>
                             </div>
                           </div>
-                          {/* Health Indicator */}
                           <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${health.color}/10`}>
                             <div className={`w-2 h-2 rounded-full ${health.color} health-pulse shadow-sm ${health.glow}`} />
                             <span className={`text-[9px] font-semibold tracking-wider uppercase ${health.color.replace('bg-', 'text-')}`}>
@@ -269,7 +348,6 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* Ring + Stats */}
                         <div className="flex items-center gap-4 mb-4">
                           <ProgressRing percentage={pct} size={64} strokeWidth={5} color={config.ringColor} />
                           <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 flex-1">
@@ -292,7 +370,6 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* Progress bar */}
                         <div className="flex items-center gap-2">
                           <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
                             <div
@@ -303,7 +380,6 @@ export default function DashboardPage() {
                           <span className="text-[10px] font-bold text-slate-400">{pct}%</span>
                         </div>
 
-                        {/* View link */}
                         <div className="flex items-center gap-1 mt-3 text-[10px] text-slate-600 group-hover:text-cyan-400 transition-colors">
                           <span className="uppercase tracking-wider font-medium">View Details</span>
                           <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -385,18 +461,17 @@ export default function DashboardPage() {
           <>
             <div className="mb-8">
               <div className="flex items-center gap-2 mb-1">
-                <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-br ${teamConfig[session.team.slug]?.gradient || "from-cyan-500 to-blue-600"}`} />
-                <span className="text-[10px] text-cyan-400 font-semibold tracking-[0.2em] uppercase">{session.team.pillar}</span>
+                <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-br ${teamConfig[user.activeTeam.slug]?.gradient || "from-cyan-500 to-blue-600"}`} />
+                <span className="text-[10px] text-cyan-400 font-semibold tracking-[0.2em] uppercase">{user.activeTeam.name}</span>
               </div>
-              <h2 className="text-2xl font-bold text-white">{session.team.name} Dashboard</h2>
-              <p className="text-sm text-slate-500 mt-1">{session.team.description}</p>
+              <h2 className="text-2xl font-bold text-white">{user.activeTeam.name} Dashboard</h2>
             </div>
             <TeamDashboard
               tasks={tasks}
-              teamName={session.team.name}
-              teamSlug={session.team.slug}
-              pillar={session.team.pillar || ""}
-              onRefresh={() => fetchData(session.team.slug)}
+              teamName={user.activeTeam.name}
+              teamSlug={user.activeTeam.slug}
+              pillar=""
+              onRefresh={() => fetchData(user.activeTeam.slug)}
             />
           </>
         )}

@@ -5,7 +5,6 @@ import { SessionData, sessionOptions } from "@/lib/session";
 import { getDb } from "@/lib/db";
 
 function enrichTasks(db: any, tasks: any[]) {
-  // Add comment counts and department-level dependency info to each task
   const commentCountStmt = db.prepare("SELECT COUNT(*) as cnt FROM comments WHERE task_id = ?");
   const deptDepsStmt = db.prepare(`
     SELECT d.depends_on_team_slug, d.note, team.name as team_name
@@ -30,15 +29,16 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const teamSlug = req.nextUrl.searchParams.get("team");
 
-  if (session.teamSlug === "leadership") {
-    // Leadership sees all teams or a specific team
+  // Check if user is on leadership team
+  const isLeadership = session.activeTeamSlug === "leadership";
+
+  if (isLeadership) {
     if (teamSlug && teamSlug !== "leadership") {
       const team = db.prepare("SELECT id FROM teams WHERE slug = ?").get(teamSlug) as any;
       if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
       const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(team.id);
       return NextResponse.json({ tasks: enrichTasks(db, tasks) });
     }
-    // All tasks grouped
     const teams = db.prepare("SELECT id, name, slug, pillar, description FROM teams WHERE slug != 'leadership'").all();
     const allData = (teams as any[]).map((team: any) => {
       const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(team.id);
@@ -48,6 +48,6 @@ export async function GET(req: NextRequest) {
   }
 
   // Regular team sees only their tasks
-  const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(session.teamId);
+  const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(session.activeTeamId);
   return NextResponse.json({ tasks: enrichTasks(db, tasks) });
 }

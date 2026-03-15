@@ -1,10 +1,20 @@
 import { SessionOptions } from "iron-session";
 
+export interface TeamInfo {
+  id: number;
+  slug: string;
+  name: string;
+}
+
 export interface SessionData {
-  teamId?: number;
-  teamSlug?: string;
-  teamName?: string;
+  userId?: number;
+  userName?: string;
+  teams?: TeamInfo[];
+  activeTeamSlug?: string;
+  activeTeamId?: number;
+  activeTeamName?: string;
   isLoggedIn?: boolean;
+  mustChangePassword?: boolean;
 }
 
 export const sessionOptions: SessionOptions = {

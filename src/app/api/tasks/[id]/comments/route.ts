@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
-import { getDb } from "@/lib/db";
+import { getDb, auditLog } from "@/lib/db";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
@@ -41,10 +41,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const result = db
-    .prepare("INSERT INTO comments (task_id, team_name, team_slug, content) VALUES (?, ?, ?, ?)")
-    .run(Number(id), session.teamName || "Unknown", session.teamSlug || "unknown", content.trim());
+    .prepare("INSERT INTO comments (task_id, user_id, user_name, team_name, team_slug, content) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(
+      Number(id),
+      session.userId || null,
+      session.userName || "Unknown",
+      session.activeTeamName || "Unknown",
+      session.activeTeamSlug || "unknown",
+      content.trim()
+    );
 
   const comment = db.prepare("SELECT * FROM comments WHERE id = ?").get(result.lastInsertRowid);
+
+  auditLog(db, session.userId!, session.userName || "Unknown", "comment_add", {
+    taskId: Number(id),
+    commentId: result.lastInsertRowid,
+  }, "task", Number(id));
 
   return NextResponse.json({ comment }, { status: 201 });
 }

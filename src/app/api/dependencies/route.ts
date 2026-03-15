@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
-import { getDb } from "@/lib/db";
+import { getDb, auditLog } from "@/lib/db";
 
-// GET all department-level dependencies (for leadership view)
 export async function GET() {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
@@ -38,7 +37,6 @@ export async function GET() {
   return NextResponse.json({ dependencies });
 }
 
-// POST: add a department dependency to a task
 export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
@@ -53,19 +51,16 @@ export async function POST(req: NextRequest) {
 
   const db = getDb();
 
-  // Verify task exists
   const task = db.prepare("SELECT id, team_id FROM tasks WHERE id = ?").get(Number(task_id)) as any;
   if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  // Verify target team exists
   const team = db.prepare("SELECT slug FROM teams WHERE slug = ?").get(depends_on_team_slug) as any;
   if (!team) {
     return NextResponse.json({ error: "Team not found" }, { status: 404 });
   }
 
-  // Prevent self-dependency (task's own team)
   const taskTeam = db.prepare("SELECT slug FROM teams WHERE id = ?").get(task.team_id) as any;
   if (taskTeam?.slug === depends_on_team_slug) {
     return NextResponse.json({ error: "Cannot depend on own team" }, { status: 400 });
@@ -82,10 +77,15 @@ export async function POST(req: NextRequest) {
     throw e;
   }
 
+  auditLog(db, session.userId!, session.userName || "Unknown", "dependency_add", {
+    taskId: Number(task_id),
+    dependsOnTeam: depends_on_team_slug,
+    note: note || "",
+  }, "task", Number(task_id));
+
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
-// DELETE: remove a department dependency
 export async function DELETE(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
@@ -98,6 +98,11 @@ export async function DELETE(req: NextRequest) {
   db.prepare(
     "DELETE FROM dept_dependencies WHERE task_id = ? AND depends_on_team_slug = ?"
   ).run(Number(task_id), depends_on_team_slug);
+
+  auditLog(db, session.userId!, session.userName || "Unknown", "dependency_remove", {
+    taskId: Number(task_id),
+    dependsOnTeam: depends_on_team_slug,
+  }, "task", Number(task_id));
 
   return NextResponse.json({ ok: true });
 }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
-import { getDb } from "@/lib/db";
+import { getDb, auditLog } from "@/lib/db";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
@@ -20,9 +20,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   // Only allow team members or leadership to update
-  if (session.teamSlug !== "leadership") {
-    const team = db.prepare("SELECT id FROM teams WHERE id = ?").get(session.teamId) as any;
-    if (task.team_id !== team.id) {
+  if (session.activeTeamSlug !== "leadership") {
+    if (task.team_id !== session.activeTeamId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
@@ -59,8 +58,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (status && status !== oldStatus) {
     db.prepare(
       "INSERT INTO task_updates (task_id, old_status, new_status, notes, updated_by) VALUES (?, ?, ?, ?, ?)"
-    ).run(Number(id), oldStatus, status, notes || "", session.teamName);
+    ).run(Number(id), oldStatus, status, notes || "", session.userName || "Unknown");
   }
+
+  auditLog(db, session.userId!, session.userName || "Unknown", "task_update", {
+    taskId: Number(id),
+    changes: body,
+    oldStatus: status && status !== oldStatus ? oldStatus : undefined,
+  }, "task", Number(id));
 
   const updated = db.prepare("SELECT * FROM tasks WHERE id = ?").get(Number(id));
   return NextResponse.json({ task: updated });
