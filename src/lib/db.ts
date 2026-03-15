@@ -69,6 +69,7 @@ function initDb(db: Database.Database) {
       category TEXT DEFAULT '',
       notes TEXT DEFAULT '',
       priority TEXT DEFAULT 'MEDIUM',
+      due_date TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (team_id) REFERENCES teams(id)
@@ -118,6 +119,13 @@ function initDb(db: Database.Database) {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migration: add due_date column if missing (for existing DBs)
+  try {
+    db.prepare("SELECT due_date FROM tasks LIMIT 1").get();
+  } catch {
+    db.exec("ALTER TABLE tasks ADD COLUMN due_date TEXT DEFAULT NULL");
+  }
 
   // Check if teams are already seeded
   const count = db.prepare("SELECT COUNT(*) as cnt FROM teams").get() as { cnt: number };
@@ -216,49 +224,49 @@ function seedData(db: Database.Database) {
 
   // Seed tasks
   const insertTask = db.prepare(
-    "INSERT INTO tasks (team_id, deliverable, workstream, status, owner, timeline, category, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO tasks (team_id, deliverable, workstream, status, owner, timeline, category, priority, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   const seedMany = db.transaction((tasks: any[]) => {
     for (const t of tasks) {
-      insertTask.run(t.team_id, t.deliverable, t.workstream, t.status, t.owner, t.timeline, t.category, t.priority);
+      insertTask.run(t.team_id, t.deliverable, t.workstream, t.status, t.owner, t.timeline, t.category, t.priority, t.due_date || null);
     }
   });
 
   // Engineering tasks (Pillar 1)
   const engTasks = [
-    { deliverable: "SDK + headless wallet live in marketplace & GitHub", workstream: "1.1", status: "IN FLIGHT", owner: "BOGA", timeline: "Immediate", category: "SDK & Agent Skill", priority: "CRITICAL" },
-    { deliverable: "npm package published", workstream: "1.1", status: "IN FLIGHT", owner: "HANZHI", timeline: "Immediate", category: "SDK & Agent Skill", priority: "CRITICAL" },
-    { deliverable: "Machine-readable chain support registry published", workstream: "1.4", status: "OPEN", owner: "YU FENG", timeline: "At SDK launch", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "Bridge coverage documented (contracts + audit status)", workstream: "1.4", status: "OPEN", owner: "BOGA", timeline: "At SDK launch", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "EIP-3009 spec finalized and published", workstream: "1.2", status: "IN PROGRESS", owner: "COREY", timeline: "14 days", category: "EIP-3009", priority: "CRITICAL" },
-    { deliverable: "EIP-3009 contract modifications complete + test suite", workstream: "1.2", status: "IN PROGRESS", owner: "HANZHI", timeline: "14 days", category: "EIP-3009", priority: "CRITICAL" },
-    { deliverable: "EIP-3009 testnet deployed for audit reference", workstream: "1.2", status: "OPEN", owner: "HANZHI", timeline: "21 days", category: "EIP-3009", priority: "HIGH" },
-    { deliverable: "Audit firms engaged, scope confirmed, timelines locked", workstream: "1.2", status: "OPEN", owner: "COREY", timeline: "21 days", category: "EIP-3009", priority: "HIGH" },
-    { deliverable: "Standards participation owner assigned + bandwidth allocated", workstream: "1.3", status: "IN PROGRESS", owner: "YU FENG", timeline: "Immediate", category: "Standards", priority: "HIGH" },
-    { deliverable: "EIP-3009 audit completion — all firms", workstream: "1.2", status: "AUDIT-GATED", owner: "COREY", timeline: "45 days", category: "EIP-3009", priority: "CRITICAL" },
+    { deliverable: "SDK + headless wallet live in marketplace & GitHub", workstream: "1.1", status: "IN FLIGHT", owner: "BOGA", timeline: "Immediate", category: "SDK & Agent Skill", priority: "CRITICAL", due_date: "2026-03-10" },
+    { deliverable: "npm package published", workstream: "1.1", status: "IN FLIGHT", owner: "HANZHI", timeline: "Immediate", category: "SDK & Agent Skill", priority: "CRITICAL", due_date: "2026-03-08" },
+    { deliverable: "Machine-readable chain support registry published", workstream: "1.4", status: "OPEN", owner: "YU FENG", timeline: "At SDK launch", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-03-20" },
+    { deliverable: "Bridge coverage documented (contracts + audit status)", workstream: "1.4", status: "OPEN", owner: "BOGA", timeline: "At SDK launch", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-03-20" },
+    { deliverable: "EIP-3009 spec finalized and published", workstream: "1.2", status: "IN PROGRESS", owner: "COREY", timeline: "14 days", category: "EIP-3009", priority: "CRITICAL", due_date: "2026-03-12" },
+    { deliverable: "EIP-3009 contract modifications complete + test suite", workstream: "1.2", status: "IN PROGRESS", owner: "HANZHI", timeline: "14 days", category: "EIP-3009", priority: "CRITICAL", due_date: "2026-03-12" },
+    { deliverable: "EIP-3009 testnet deployed for audit reference", workstream: "1.2", status: "OPEN", owner: "HANZHI", timeline: "21 days", category: "EIP-3009", priority: "HIGH", due_date: "2026-04-05" },
+    { deliverable: "Audit firms engaged, scope confirmed, timelines locked", workstream: "1.2", status: "OPEN", owner: "COREY", timeline: "21 days", category: "EIP-3009", priority: "HIGH", due_date: "2026-04-05" },
+    { deliverable: "Standards participation owner assigned + bandwidth allocated", workstream: "1.3", status: "IN PROGRESS", owner: "YU FENG", timeline: "Immediate", category: "Standards", priority: "HIGH", due_date: "2026-03-05" },
+    { deliverable: "EIP-3009 audit completion — all firms", workstream: "1.2", status: "AUDIT-GATED", owner: "COREY", timeline: "45 days", category: "EIP-3009", priority: "CRITICAL", due_date: "2026-04-30" },
     { deliverable: "EIP-3009 mainnet deployment (ETH + BSC)", workstream: "1.2", status: "AUDIT-GATED", owner: "COREY", timeline: "30 days post-audit", category: "EIP-3009", priority: "CRITICAL" },
-    { deliverable: "Gasless support on EVM chains", workstream: "2", status: "OPEN", owner: "CHAOFAN", timeline: "45 days", category: "SDK & Agent Skill", priority: "HIGH" },
+    { deliverable: "Gasless support on EVM chains", workstream: "2", status: "OPEN", owner: "CHAOFAN", timeline: "45 days", category: "SDK & Agent Skill", priority: "HIGH", due_date: "2026-04-30" },
     { deliverable: "SDK updated with EIP-3009 methods", workstream: "1.1/1.2", status: "AUDIT-GATED", owner: "CHAOFAN", timeline: "Post-audit", category: "SDK & Agent Skill", priority: "HIGH" },
-    { deliverable: "Monad deployment live + in chain registry", workstream: "1.4", status: "OPEN", owner: "YANJU", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "AI Agent Consortium formal membership", workstream: "1.3", status: "OPEN", owner: "YU FENG", timeline: "30 days", category: "Standards", priority: "MEDIUM" },
-    { deliverable: "X402 spec reviewed + comment/PR submitted", workstream: "1.3", status: "OPEN", owner: "CHAOFAN", timeline: "30 days", category: "Standards", priority: "MEDIUM" },
+    { deliverable: "Monad deployment live + in chain registry", workstream: "1.4", status: "OPEN", owner: "YANJU", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-04-15" },
+    { deliverable: "AI Agent Consortium formal membership", workstream: "1.3", status: "OPEN", owner: "YU FENG", timeline: "30 days", category: "Standards", priority: "MEDIUM", due_date: "2026-04-15" },
+    { deliverable: "X402 spec reviewed + comment/PR submitted", workstream: "1.3", status: "OPEN", owner: "CHAOFAN", timeline: "30 days", category: "Standards", priority: "MEDIUM", due_date: "2026-04-15" },
     { deliverable: "Audit reports published publicly", workstream: "1.2", status: "AUDIT-GATED", owner: "COREY", timeline: "Post-audit", category: "EIP-3009", priority: "HIGH" },
-    { deliverable: "Monad deployment date confirmed", workstream: "1.4", status: "IN FLIGHT", owner: "COREY", timeline: "7 days", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "USD1 Agentic Payment Specification published on GitHub", workstream: "1.3", status: "PLANNED", owner: "YANJU", timeline: "45 days", category: "Standards", priority: "MEDIUM" },
-    { deliverable: "WLFI's own ERC-XXXX Agentic Commerce verified + reference test vectors published", workstream: "1.3", status: "PLANNED", owner: "YU FENG", timeline: "60 days", category: "Standards", priority: "MEDIUM" },
-    { deliverable: "Base native deployment live", workstream: "1.4", status: "PLANNED", owner: "CHAOFAN", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "Arbitrum native deployment live", workstream: "1.4", status: "PLANNED", owner: "YANJU", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH" },
-    { deliverable: "Agent-only hackathon announced and accepting registrations", workstream: "1.1/1.3", status: "PLANNED", owner: "YU FENG", timeline: "45 days", category: "SDK & Agent Skill", priority: "MEDIUM" },
-    { deliverable: "Multi-chain EIP-3009 reference implementation published", workstream: "1.2/1.3", status: "PLANNED", owner: "HANZHI", timeline: "60 days", category: "EIP-3009", priority: "MEDIUM" },
+    { deliverable: "Monad deployment date confirmed", workstream: "1.4", status: "IN FLIGHT", owner: "COREY", timeline: "7 days", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-03-11" },
+    { deliverable: "USD1 Agentic Payment Specification published on GitHub", workstream: "1.3", status: "PLANNED", owner: "YANJU", timeline: "45 days", category: "Standards", priority: "MEDIUM", due_date: "2026-04-30" },
+    { deliverable: "WLFI's own ERC-XXXX Agentic Commerce verified + reference test vectors published", workstream: "1.3", status: "PLANNED", owner: "YU FENG", timeline: "60 days", category: "Standards", priority: "MEDIUM", due_date: "2026-05-15" },
+    { deliverable: "Base native deployment live", workstream: "1.4", status: "PLANNED", owner: "CHAOFAN", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-04-15" },
+    { deliverable: "Arbitrum native deployment live", workstream: "1.4", status: "PLANNED", owner: "YANJU", timeline: "30 days", category: "Cross-chain Liquidity", priority: "HIGH", due_date: "2026-04-15" },
+    { deliverable: "Agent-only hackathon announced and accepting registrations", workstream: "1.1/1.3", status: "PLANNED", owner: "YU FENG", timeline: "45 days", category: "SDK & Agent Skill", priority: "MEDIUM", due_date: "2026-04-30" },
+    { deliverable: "Multi-chain EIP-3009 reference implementation published", workstream: "1.2/1.3", status: "PLANNED", owner: "HANZHI", timeline: "60 days", category: "EIP-3009", priority: "MEDIUM", due_date: "2026-05-15" },
   ].map((t) => ({ ...t, team_id: teamIds["engineering"] }));
 
   const bdTasks = [
-    { deliverable: "G42 correct counterpart identified for compute billing conversation", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL" },
-    { deliverable: "G42 compute billing meeting scheduled", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL" },
-    { deliverable: "Integration brief prepared (one-page billing flow)", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "Before meeting", category: "Sovereign AI Integration", priority: "HIGH" },
-    { deliverable: "Direct relationship protocol documented and assigned", workstream: "2.4", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "Direct Relationships", priority: "CRITICAL" },
-    { deliverable: "Existing WLFI fintech contacts reactivated in priority corridors", workstream: "2.3", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Geographic Corridors", priority: "HIGH" },
+    { deliverable: "G42 correct counterpart identified for compute billing conversation", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL", due_date: "2026-03-07" },
+    { deliverable: "G42 compute billing meeting scheduled", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "0-14 days", category: "Sovereign AI Integration", priority: "CRITICAL", due_date: "2026-03-07" },
+    { deliverable: "Integration brief prepared (one-page billing flow)", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "Before meeting", category: "Sovereign AI Integration", priority: "HIGH", due_date: "2026-03-14" },
+    { deliverable: "Direct relationship protocol documented and assigned", workstream: "2.4", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "Direct Relationships", priority: "CRITICAL", due_date: "2026-03-03" },
+    { deliverable: "Existing WLFI fintech contacts reactivated in priority corridors", workstream: "2.3", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Geographic Corridors", priority: "HIGH", due_date: "2026-03-14" },
     { deliverable: "G42 compute billing meeting held; integration framework under discussion", workstream: "2.1", status: "OPEN", owner: "Unassigned", timeline: "30 days", category: "Sovereign AI Integration", priority: "HIGH" },
     { deliverable: "G42 portfolio mapping complete — top 10 AI lab targets identified", workstream: "2.2", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "AI Lab Ecosystem", priority: "HIGH" },
     { deliverable: "Outreach initiated to top 10 AI labs via G42 introductions", workstream: "2.2", status: "OPEN", owner: "Unassigned", timeline: "30 days", category: "AI Lab Ecosystem", priority: "HIGH" },
@@ -277,11 +285,11 @@ function seedData(db: Database.Database) {
   ].map((t) => ({ ...t, team_id: teamIds["bd"] }));
 
   const defiTasks = [
-    { deliverable: "Wintermute relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL" },
-    { deliverable: "Cumberland relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL" },
-    { deliverable: "PoR API submitted to Gauntlet + Chaos Labs", workstream: "3.5", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Proof of Reserves", priority: "HIGH" },
-    { deliverable: "PoR API DefiLlama integration requested", workstream: "3.5", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Proof of Reserves", priority: "HIGH" },
-    { deliverable: "Current status of all CEX conversations documented", workstream: "3.3", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "CEX Listings", priority: "HIGH" },
+    { deliverable: "Wintermute relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL", due_date: "2026-03-06" },
+    { deliverable: "Cumberland relationship meeting scheduled", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "0-7 days", category: "Market Makers", priority: "CRITICAL", due_date: "2026-03-06" },
+    { deliverable: "PoR API submitted to Gauntlet + Chaos Labs", workstream: "3.5", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Proof of Reserves", priority: "HIGH", due_date: "2026-03-14" },
+    { deliverable: "PoR API DefiLlama integration requested", workstream: "3.5", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Proof of Reserves", priority: "HIGH", due_date: "2026-03-14" },
+    { deliverable: "Current status of all CEX conversations documented", workstream: "3.3", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "CEX Listings", priority: "HIGH", due_date: "2026-03-01" },
     { deliverable: "Gauntlet pre-assessment contact initiated for Aave + Compound", workstream: "3.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Tier 1 DeFi", priority: "HIGH" },
     { deliverable: "2+ market maker agreements signed", workstream: "3.4", status: "OPEN", owner: "Unassigned", timeline: "Before listing", category: "Market Makers", priority: "CRITICAL" },
     { deliverable: "Aave ARC submitted to governance forum", workstream: "3.1", status: "OPEN", owner: "Unassigned", timeline: "21 days", category: "Tier 1 DeFi", priority: "HIGH" },
@@ -307,10 +315,10 @@ function seedData(db: Database.Database) {
   ].map((t) => ({ ...t, team_id: teamIds["defi"] }));
 
   const legalTasks = [
-    { deliverable: "OCC application status memo — open items, conditions, supplemental needs", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL" },
-    { deliverable: "Approved public language for OCC application status confirmed", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL" },
-    { deliverable: "Toolkit document list confirmed; ownership assigned per document", workstream: "4.6", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "Regulatory Toolkit", priority: "HIGH" },
-    { deliverable: "Big Four firm outreach initiated — 3 firms approached", workstream: "4.4", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Trust Infrastructure", priority: "HIGH" },
+    { deliverable: "OCC application status memo — open items, conditions, supplemental needs", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL", due_date: "2026-03-10" },
+    { deliverable: "Approved public language for OCC application status confirmed", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "CRITICAL", due_date: "2026-03-10" },
+    { deliverable: "Toolkit document list confirmed; ownership assigned per document", workstream: "4.6", status: "OPEN", owner: "Unassigned", timeline: "Immediate", category: "Regulatory Toolkit", priority: "HIGH", due_date: "2026-03-05" },
+    { deliverable: "Big Four firm outreach initiated — 3 firms approached", workstream: "4.4", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "Trust Infrastructure", priority: "HIGH", due_date: "2026-03-14" },
     { deliverable: "MiCA: EMI member state confirmed; local counsel engaged", workstream: "4.2", status: "REVIEW", owner: "Unassigned", timeline: "14 days", category: "International Licensing", priority: "HIGH" },
     { deliverable: "AML/BSA self-assessment against OCC examination standards initiated", workstream: "4.1", status: "OPEN", owner: "Unassigned", timeline: "14 days", category: "OCC Charter", priority: "HIGH" },
     { deliverable: "Big Four attestation engagement terms agreed", workstream: "4.4", status: "OPEN", owner: "Unassigned", timeline: "30 days", category: "Trust Infrastructure", priority: "HIGH" },

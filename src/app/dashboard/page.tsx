@@ -51,8 +51,9 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [activeTeamTab, setActiveTeamTab] = useState<string>("overview");
-  const [leadershipView, setLeadershipView] = useState<"overview" | "timeline" | "dependencies">("overview");
+  const [leadershipView, setLeadershipView] = useState<"overview" | "timeline" | "dependencies" | "audit">("overview");
   const [showTeamSwitcher, setShowTeamSwitcher] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const router = useRouter();
 
   const fetchData = useCallback(async (teamSlug: string) => {
@@ -95,6 +96,14 @@ export default function DashboardPage() {
     router.push("/");
   }
 
+  async function fetchAuditLogs() {
+    const res = await fetch("/api/admin/audit");
+    if (res.ok) {
+      const data = await res.json();
+      setAuditLogs(data.logs || []);
+    }
+  }
+
   async function switchTeam(teamSlug: string) {
     const res = await fetch("/api/auth/switch-team", {
       method: "POST",
@@ -128,6 +137,13 @@ export default function DashboardPage() {
   const isLeadership = user.activeTeam.slug === "leadership";
   const hasMultipleTeams = user.teams.length > 1;
 
+  function isTaskOverdue(task: any): boolean {
+    if (!task.due_date) return false;
+    if (task.status === "COMPLETED" || task.status === "DONE") return false;
+    const today = new Date().toISOString().split("T")[0];
+    return task.due_date < today;
+  }
+
   const leadershipOverview = isLeadership
     ? allTeams.map((team) => {
         const t = team.tasks || [];
@@ -137,7 +153,8 @@ export default function DashboardPage() {
         const blocked = t.filter((x: any) => ["BLOCKED", "AUDIT-GATED"].includes(x.status)).length;
         const critical = t.filter((x: any) => x.priority === "CRITICAL" && x.status !== "COMPLETED").length;
         const open = t.filter((x: any) => x.status === "OPEN" || x.status === "PLANNED").length;
-        return { ...team, total, completed, inProgress, blocked, critical, open };
+        const overdue = t.filter(isTaskOverdue).length;
+        return { ...team, total, completed, inProgress, blocked, critical, open, overdue };
       })
     : [];
 
@@ -146,6 +163,7 @@ export default function DashboardPage() {
   const inProgressAll = leadershipOverview.reduce((a, b) => a + b.inProgress, 0);
   const blockedAll = leadershipOverview.reduce((a, b) => a + b.blocked, 0);
   const criticalAll = leadershipOverview.reduce((a, b) => a + b.critical, 0);
+  const overdueAll = leadershipOverview.reduce((a, b) => a + b.overdue, 0);
   const overallPct = totalAll > 0 ? Math.round((completedAll / totalAll) * 100) : 0;
 
   return (
@@ -277,14 +295,113 @@ export default function DashboardPage() {
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
                     Dependencies
                   </button>
+                  <button
+                    onClick={() => { setLeadershipView("audit"); fetchAuditLogs(); }}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold tracking-wide transition-all ${
+                      leadershipView === "audit"
+                        ? "bg-white/[0.08] text-white"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                    Audit Log
+                  </button>
                 </div>
 
                 {leadershipView === "timeline" ? (
                   <LeadershipTimeline teams={allTeams} />
                 ) : leadershipView === "dependencies" ? (
                   <DependencyView teams={allTeams} />
+                ) : leadershipView === "audit" ? (
+                  /* Audit Log View */
+                  <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-white/[0.04] flex items-center justify-between">
+                      <h2 className="text-sm font-bold text-white">Full Audit Log</h2>
+                      <button
+                        onClick={() => window.open("/api/admin/audit?format=csv&limit=10000", "_blank")}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/10 transition-all font-medium"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Export CSV
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                      <table className="w-full">
+                        <thead className="sticky top-0 bg-[#0d1a2d]">
+                          <tr className="border-b border-white/[0.04]">
+                            <th className="px-6 py-3 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Time</th>
+                            <th className="px-6 py-3 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold">User</th>
+                            <th className="px-6 py-3 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Action</th>
+                            <th className="px-6 py-3 text-left text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Details</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {auditLogs.map((log: any) => {
+                            let details: any = {};
+                            try { details = JSON.parse(log.details); } catch {}
+                            return (
+                              <tr key={log.id} className="border-b border-white/[0.02] hover:bg-white/[0.02]">
+                                <td className="px-6 py-3 text-xs text-slate-500 whitespace-nowrap">
+                                  {new Date(log.created_at).toLocaleString()}
+                                </td>
+                                <td className="px-6 py-3 text-sm text-white font-medium">{log.user_name}</td>
+                                <td className="px-6 py-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white/[0.06] text-slate-300">
+                                    {log.action_type}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-3 text-xs text-slate-400 font-mono max-w-xs truncate">
+                                  {details.changes ? Object.entries(details.changes).map(([k, v]) => `${k}: ${v}`).join(", ") :
+                                   Object.entries(details).map(([k, v]) => `${k}: ${v}`).join(", ") || "-"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {auditLogs.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="px-6 py-12 text-center text-sm text-slate-500">
+                                No audit log entries yet. Changes will appear here as team members update tasks.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 ) : (
                 <>
+                {/* Overdue Tasks Summary */}
+                {overdueAll > 0 && (
+                  <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-xl p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <h3 className="text-sm font-bold text-red-400">
+                        {overdueAll} Overdue Task{overdueAll !== 1 ? "s" : ""} Across Teams
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                      {leadershipOverview.filter((t) => t.overdue > 0).map((team) => {
+                        const config = teamConfig[team.slug] || teamConfig["engineering"];
+                        return (
+                          <button
+                            key={team.slug}
+                            onClick={() => setActiveTeamTab(team.slug)}
+                            className="flex items-center gap-2 px-3 py-2 bg-red-500/5 border border-red-500/15 rounded-lg hover:bg-red-500/10 transition-all"
+                          >
+                            <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${config.gradient} flex items-center justify-center text-[10px] font-bold text-white`}>
+                              {config.letter}
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold text-red-400">{team.overdue}</div>
+                              <div className="text-[9px] text-slate-500">{team.name}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Global Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8">
                   <div className="col-span-2 md:col-span-1 bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4 flex items-center justify-center gold-glow">

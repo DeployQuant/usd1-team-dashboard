@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
-  const { status, owner, notes } = body;
+  const { status, owner, notes, due_date } = body;
   const oldStatus = task.status;
 
   const updates: string[] = [];
@@ -43,6 +43,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (notes !== undefined) {
     updates.push("notes = ?");
     values.push(notes);
+  }
+  if (due_date !== undefined) {
+    updates.push("due_date = ?");
+    values.push(due_date || null);
   }
 
   if (updates.length === 0) {

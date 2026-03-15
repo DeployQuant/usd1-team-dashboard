@@ -15,6 +15,7 @@ interface Task {
   category: string;
   priority: string;
   notes: string;
+  due_date?: string;
   updated_at: string;
 }
 
@@ -24,6 +25,7 @@ const STATUS_GROUPS: Record<string, { label: string; statuses: string[]; dot: st
   OPEN: { label: "Open", statuses: ["OPEN", "PLANNED"], dot: "bg-slate-500", text: "text-slate-300" },
   BLOCKED: { label: "Blocked", statuses: ["BLOCKED", "AUDIT-GATED", "PENDING AUDIT"], dot: "bg-orange-400", text: "text-orange-400" },
   DONE: { label: "Done", statuses: ["COMPLETED", "DONE"], dot: "bg-emerald-400", text: "text-emerald-400" },
+  OVERDUE: { label: "Overdue", statuses: [], dot: "bg-red-500", text: "text-red-400" },
 };
 
 function getGroupForStatus(status: string): string {
@@ -31,6 +33,14 @@ function getGroupForStatus(status: string): string {
     if (config.statuses.includes(status)) return group;
   }
   return "OPEN";
+}
+
+function isOverdue(task: Task): boolean {
+  if (!task.due_date) return false;
+  const done = task.status === "COMPLETED" || task.status === "DONE";
+  if (done) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return task.due_date < today;
 }
 
 interface IncomingDep {
@@ -99,9 +109,13 @@ export default function TeamDashboard({
     return new Set(tasks.map((t) => t.status));
   }, [tasks]);
 
+  const overdueCount = useMemo(() => tasks.filter(isOverdue).length, [tasks]);
+
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      if (filterGroup !== "ALL") {
+      if (filterGroup === "OVERDUE") {
+        if (!isOverdue(t)) return false;
+      } else if (filterGroup !== "ALL") {
         const group = STATUS_GROUPS[filterGroup];
         if (group && !group.statuses.includes(t.status)) return false;
       }
@@ -167,6 +181,12 @@ export default function TeamDashboard({
   const dropdownOptions = useMemo(() => {
     const options: { value: string; label: string; isGroup: boolean }[] = [];
     for (const [key, config] of Object.entries(STATUS_GROUPS)) {
+      if (key === "OVERDUE") {
+        if (overdueCount > 0) {
+          options.push({ value: "OVERDUE", label: `Overdue (${overdueCount})`, isGroup: true });
+        }
+        continue;
+      }
       const count = tasks.filter((t) => config.statuses.includes(t.status)).length;
       const subLabels = config.statuses.filter((s) => rawStatuses.has(s));
       const suffix = subLabels.length > 0 ? ` — ${subLabels.join(", ")}` : "";
@@ -177,12 +197,39 @@ export default function TeamDashboard({
       });
     }
     return options;
-  }, [tasks, rawStatuses]);
+  }, [tasks, rawStatuses, overdueCount]);
 
   return (
     <div>
+      {/* Overdue Alert Banner */}
+      {overdueCount > 0 && (
+        <div className="mb-6 bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-red-400">
+              {overdueCount} Overdue Task{overdueCount !== 1 ? "s" : ""}
+            </h3>
+            <p className="text-[11px] text-red-400/70 mt-0.5">
+              These tasks have passed their due date and need immediate attention.
+            </p>
+          </div>
+          <button
+            onClick={() => handleKpiClick("OVERDUE")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+              filterGroup === "OVERDUE"
+                ? "bg-red-500 text-white"
+                : "text-red-400 border border-red-500/30 hover:bg-red-500/20"
+            }`}
+          >
+            {filterGroup === "OVERDUE" ? "Showing Overdue" : "View All"}
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards + Progress Ring */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+      <div className={`grid grid-cols-2 ${overdueCount > 0 ? "lg:grid-cols-7" : "lg:grid-cols-6"} gap-3 mb-6`}>
         {/* Progress Ring */}
         <div className="col-span-2 lg:col-span-1 bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4 flex items-center justify-center">
           <ProgressRing percentage={progressPct} size={90} color="#22d3ee" label="Complete" />
@@ -279,6 +326,27 @@ export default function TeamDashboard({
             <div className="text-[9px] text-emerald-600 mt-1">Completed</div>
           )}
         </button>
+
+        {/* Overdue KPI Card */}
+        {overdueCount > 0 && (
+          <button
+            onClick={() => handleKpiClick("OVERDUE")}
+            className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+              filterGroup === "OVERDUE"
+                ? "border-red-400/30 ring-1 ring-red-400/20"
+                : "border-red-500/10 hover:border-red-500/20"
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-[10px] text-red-500 uppercase tracking-wider font-medium">Overdue</span>
+            </div>
+            <div className="text-2xl font-bold text-red-400">{overdueCount}</div>
+            {filterGroup === "OVERDUE" && (
+              <div className="text-[9px] text-red-600 mt-1">Past due date</div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Incoming Dependencies Section — always visible above task list for team dashboards */}
@@ -343,6 +411,20 @@ export default function TeamDashboard({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Legal & Compliance: Audit Export */}
+      {teamSlug === "legal" && (
+        <div className="mb-6 flex items-center gap-3">
+          <button
+            onClick={() => window.open("/api/admin/audit?format=csv&limit=10000", "_blank")}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/10 transition-all font-semibold"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Export Full Audit Log (CSV)
+          </button>
+          <span className="text-[10px] text-slate-600">For compliance records</span>
         </div>
       )}
 

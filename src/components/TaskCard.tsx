@@ -19,6 +19,7 @@ interface Task {
   category: string;
   priority: string;
   notes: string;
+  due_date?: string;
   updated_at: string;
   comment_count?: number;
   dept_dependencies?: DeptDep[];
@@ -27,9 +28,18 @@ interface Task {
 interface Comment {
   id: number;
   task_id: number;
+  user_name: string;
   team_name: string;
   team_slug: string;
   content: string;
+  created_at: string;
+}
+
+interface AuditEntry {
+  id: number;
+  user_name: string;
+  action_type: string;
+  details: string;
   created_at: string;
 }
 
@@ -67,6 +77,21 @@ const teamColorMap: Record<string, string> = {
   marketing: "text-orange-400 bg-orange-500/10 border-orange-500/20",
 };
 
+function isOverdue(task: Task): boolean {
+  if (!task.due_date) return false;
+  const done = task.status === "COMPLETED" || task.status === "DONE";
+  if (done) return false;
+  const today = new Date().toISOString().split("T")[0];
+  return task.due_date < today;
+}
+
+function daysOverdue(dueDate: string): number {
+  const due = new Date(dueDate + "T00:00:00");
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default function TaskCard({
   task,
   onUpdate,
@@ -91,6 +116,7 @@ export default function TaskCard({
   const [status, setStatus] = useState(task.status);
   const [owner, setOwner] = useState(task.owner);
   const [notes, setNotes] = useState(task.notes || "");
+  const [dueDate, setDueDate] = useState(task.due_date || "");
   const [saving, setSaving] = useState(false);
 
   // Comments state
@@ -108,12 +134,18 @@ export default function TaskCard({
   const [selectedDepTeam, setSelectedDepTeam] = useState<string | null>(null);
   const [localDeptDeps, setLocalDeptDeps] = useState<DeptDep[]>(task.dept_dependencies || []);
 
+  // Audit log state
+  const [showAuditLog, setShowAuditLog] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
   // Sync local deps when task prop changes
   useEffect(() => {
     setLocalDeptDeps(task.dept_dependencies || []);
   }, [task.dept_dependencies]);
 
   const isCompleted = task.status === "COMPLETED" || task.status === "DONE";
+  const overdue = isOverdue(task);
   const pConfig = priorityConfig[task.priority] || priorityConfig["MEDIUM"];
   const hasDeps = localDeptDeps.length > 0;
 
@@ -124,7 +156,7 @@ export default function TaskCard({
 
   async function handleSave() {
     setSaving(true);
-    await onUpdate(task.id, { status, owner, notes });
+    await onUpdate(task.id, { status, owner, notes, due_date: dueDate || null });
     setEditing(false);
     setSaving(false);
   }
@@ -133,6 +165,7 @@ export default function TaskCard({
     setStatus(task.status);
     setOwner(task.owner);
     setNotes(task.notes || "");
+    setDueDate(task.due_date || "");
     setEditing(false);
   }
 
@@ -149,12 +182,33 @@ export default function TaskCard({
     }
   }
 
+  async function loadAuditLog() {
+    setLoadingAudit(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/audit`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuditEntries(data.logs || []);
+      }
+    } finally {
+      setLoadingAudit(false);
+    }
+  }
+
   async function handleToggleComments(e: React.MouseEvent) {
     e.stopPropagation();
     if (!showComments) {
       await loadComments();
     }
     setShowComments(!showComments);
+  }
+
+  async function handleToggleAuditLog(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!showAuditLog) {
+      await loadAuditLog();
+    }
+    setShowAuditLog(!showAuditLog);
   }
 
   async function handleSubmitComment(e: React.FormEvent) {
@@ -220,6 +274,7 @@ export default function TaskCard({
 
   return (
     <div className={`bg-[#0d1a2d] border rounded-xl hover:border-white/[0.08] transition-all duration-200 ${
+      overdue ? "border-red-500/30 ring-1 ring-red-500/10" :
       isCompleted ? "opacity-50 border-white/[0.04]" :
       "border-white/[0.04]"
     }`}>
@@ -229,6 +284,7 @@ export default function TaskCard({
       >
         {/* Status line indicator */}
         <div className={`w-0.5 self-stretch rounded-full flex-shrink-0 mt-1 ${
+          overdue ? "bg-red-500" :
           isCompleted ? "bg-emerald-500/50" :
           task.status === "BLOCKED" ? "bg-red-500/50" :
           task.status === "AUDIT-GATED" ? "bg-orange-500/50" :
@@ -239,6 +295,12 @@ export default function TaskCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <StatusBadge status={task.status} />
+            {/* OVERDUE badge */}
+            {overdue && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border text-red-400 bg-red-500/15 border-red-500/30 animate-pulse">
+                OVERDUE {daysOverdue(task.due_date!)}d
+              </span>
+            )}
             {task.workstream && (
               <span className="text-[10px] text-slate-600 font-mono bg-white/[0.03] px-1.5 py-0.5 rounded">
                 WS {task.workstream}
@@ -265,7 +327,10 @@ export default function TaskCard({
               </span>
             )}
           </div>
-          <p className={`text-sm font-medium leading-snug ${isCompleted ? "text-slate-500 line-through" : "text-slate-200"}`}>
+          <p className={`text-sm font-medium leading-snug ${
+            overdue ? "text-red-300" :
+            isCompleted ? "text-slate-500 line-through" : "text-slate-200"
+          }`}>
             {task.deliverable}
           </p>
           <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
@@ -275,6 +340,12 @@ export default function TaskCard({
                   <span className="text-[8px] font-bold text-cyan-400">{task.owner[0]}</span>
                 </div>
                 {task.owner}
+              </span>
+            )}
+            {task.due_date && (
+              <span className={`flex items-center gap-1 ${overdue ? "text-red-400 font-semibold" : ""}`}>
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Due {task.due_date}
               </span>
             )}
             {task.timeline && (
@@ -392,8 +463,10 @@ export default function TaskCard({
                   <p className="text-slate-400 mt-0.5">{task.category || "---"}</p>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">Last Updated</span>
-                  <p className="text-slate-400 mt-0.5">{task.updated_at ? new Date(task.updated_at).toLocaleDateString() : "---"}</p>
+                  <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">Due Date</span>
+                  <p className={`mt-0.5 ${overdue ? "text-red-400 font-semibold" : "text-slate-400"}`}>
+                    {task.due_date || "No due date"}
+                  </p>
                 </div>
               </div>
               {task.notes && (
@@ -402,7 +475,7 @@ export default function TaskCard({
                   <p className="text-slate-400 text-sm mt-0.5 whitespace-pre-wrap bg-white/[0.02] rounded-lg p-2.5 border border-white/[0.04]">{task.notes}</p>
                 </div>
               )}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 {!readOnly && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditing(true); }}
@@ -418,6 +491,13 @@ export default function TaskCard({
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
                   {showComments ? "HIDE COMMENTS" : `COMMENTS${localCommentCount > 0 ? ` (${localCommentCount})` : ""}`}
+                </button>
+                <button
+                  onClick={handleToggleAuditLog}
+                  className="text-xs text-slate-500 hover:text-slate-300 font-semibold tracking-wide flex items-center gap-1.5 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                  {showAuditLog ? "HIDE HISTORY" : "HISTORY"}
                 </button>
               </div>
             </div>
@@ -442,6 +522,15 @@ export default function TaskCard({
                   onChange={(e) => setOwner(e.target.value)}
                   className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/20 placeholder-slate-600"
                   placeholder="Assign owner"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Due Date</label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/20"
                 />
               </div>
               <div>
@@ -512,9 +601,10 @@ export default function TaskCard({
                     <div key={c.id} className="bg-white/[0.02] rounded-lg p-2.5 border border-white/[0.04]">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="w-4 h-4 rounded-full bg-gradient-to-br from-cyan-500/30 to-blue-500/30 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[7px] font-bold text-cyan-400">{c.team_name[0]}</span>
+                          <span className="text-[7px] font-bold text-cyan-400">{(c.user_name || c.team_name)[0]}</span>
                         </div>
-                        <span className="text-[10px] font-semibold text-slate-400">{c.team_name}</span>
+                        <span className="text-[10px] font-semibold text-slate-400">{c.user_name || c.team_name}</span>
+                        <span className="text-[9px] text-slate-600">{c.team_name}</span>
                         <span className="text-[9px] text-slate-600 ml-auto">
                           {new Date(c.created_at).toLocaleString()}
                         </span>
@@ -522,6 +612,71 @@ export default function TaskCard({
                       <p className="text-sm text-slate-300 whitespace-pre-wrap">{c.content}</p>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Audit Log Section */}
+          {showAuditLog && (
+            <div className="mt-4 border-t border-white/[0.04] pt-3" onClick={(e) => e.stopPropagation()}>
+              <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium block mb-2">
+                Change History
+              </span>
+              {loadingAudit ? (
+                <div className="text-center py-4">
+                  <span className="text-xs text-slate-600">Loading history...</span>
+                </div>
+              ) : auditEntries.length === 0 ? (
+                <div className="text-center py-4">
+                  <span className="text-xs text-slate-600">No changes recorded yet.</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
+                  {auditEntries.map((entry) => {
+                    let details: any = {};
+                    try { details = JSON.parse(entry.details); } catch {}
+                    return (
+                      <div key={entry.id} className="bg-white/[0.02] rounded-lg px-3 py-2 border border-white/[0.04]">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[10px] font-semibold text-slate-300">{entry.user_name}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-white/[0.06] text-slate-400">
+                            {entry.action_type}
+                          </span>
+                          <span className="text-[9px] text-slate-600 ml-auto">
+                            {new Date(entry.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {details.changes && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {Object.entries(details.changes).map(([key, val]) => (
+                              <span key={key} className="mr-3">
+                                <span className="text-slate-600">{key}:</span>{" "}
+                                {details.oldStatus && key === "status" ? (
+                                  <><span className="text-red-400/70 line-through">{details.oldStatus}</span> → <span className="text-emerald-400">{String(val)}</span></>
+                                ) : (
+                                  <span className="text-slate-400">{String(val)}</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {entry.action_type === "comment_add" && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">Added a comment</div>
+                        )}
+                        {entry.action_type === "dependency_add" && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Added dependency on {details.dependsOnTeam}
+                          </div>
+                        )}
+                        {entry.action_type === "dependency_remove" && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Removed dependency on {details.dependsOnTeam}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
