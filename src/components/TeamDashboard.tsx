@@ -281,6 +281,71 @@ export default function TeamDashboard({
         </button>
       </div>
 
+      {/* Incoming Dependencies Section — always visible above task list for team dashboards */}
+      {teamSlug && teamSlug !== "leadership" && (
+        <div className="mb-6 bg-[#0d1a2d] border border-amber-500/20 rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-base">📥</span>
+            <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider">
+              Incoming Dependencies
+            </h3>
+            {incomingDeps.length > 0 && (
+              <span className="text-xs text-amber-500 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full">{incomingDeps.length}</span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 mb-3 ml-7">
+            Other teams that are waiting on {teamName}
+          </p>
+          {incomingDeps.length === 0 ? (
+            <div className="text-center py-5 ml-7">
+              <svg className="w-6 h-6 text-slate-700 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <p className="text-slate-600 text-xs">No teams are currently depending on you</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5 ml-7">
+              {incomingDeps.map((d, i) => {
+                const isUrgent = d.task_priority === "CRITICAL" || d.task_status === "BLOCKED";
+                return (
+                  <div key={i} className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
+                    isUrgent
+                      ? "bg-red-500/5 border-red-500/15"
+                      : "bg-white/[0.02] border-white/[0.04]"
+                  }`}>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0 mt-0.5 ${
+                      d.task_priority === "CRITICAL" ? "text-red-400 bg-red-500/10" :
+                      d.task_priority === "HIGH" ? "text-amber-400 bg-amber-500/10" :
+                      "text-slate-400 bg-slate-500/10"
+                    }`}>
+                      {d.task_priority}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[11px] font-medium ${isUrgent ? "text-red-300" : "text-slate-300"}`}>
+                        <span className="font-semibold text-slate-400">{d.task_team_name}</span>
+                        <span className="text-slate-600 mx-1.5">needs</span>
+                        <span>{d.task_deliverable}</span>
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[9px] text-slate-600">{d.task_status}</span>
+                        {d.note && (
+                          <span className="text-[9px] text-slate-500 italic" title={d.note}>
+                            &mdash; &quot;{d.note}&quot;
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isUrgent && (
+                      <span className="text-[9px] text-red-400 font-semibold flex-shrink-0 px-1.5 py-0.5 bg-red-500/10 rounded mt-0.5">
+                        URGENT
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* View Toggle */}
       <div className="flex items-center gap-1 mb-6 bg-[#0d1a2d] border border-white/[0.04] rounded-lg p-1 w-fit">
         <button
@@ -450,70 +515,6 @@ export default function TeamDashboard({
         )}
       </div>
 
-      {/* Incoming Dependencies Section — always visible for team dashboards */}
-      {teamSlug && teamSlug !== "leadership" && (
-        <div className="mt-6 bg-[#0d1a2d] border border-amber-500/10 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-1">
-            <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-            <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
-              Incoming Dependencies
-            </h3>
-            {incomingDeps.length > 0 && (
-              <span className="text-[10px] text-amber-500/70 font-mono">({incomingDeps.length})</span>
-            )}
-          </div>
-          <p className="text-[10px] text-slate-600 mb-4">
-            Other teams that are waiting on {teamName}
-          </p>
-          {incomingDeps.length === 0 ? (
-            <div className="text-center py-6">
-              <svg className="w-6 h-6 text-slate-700 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              <p className="text-slate-600 text-xs">No teams are currently depending on you</p>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {incomingDeps.map((d, i) => {
-                const isUrgent = d.task_priority === "CRITICAL" || d.task_status === "BLOCKED";
-                return (
-                  <div key={i} className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
-                    isUrgent
-                      ? "bg-red-500/5 border-red-500/15"
-                      : "bg-white/[0.02] border-white/[0.04]"
-                  }`}>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0 mt-0.5 ${
-                      d.task_priority === "CRITICAL" ? "text-red-400 bg-red-500/10" :
-                      d.task_priority === "HIGH" ? "text-amber-400 bg-amber-500/10" :
-                      "text-slate-400 bg-slate-500/10"
-                    }`}>
-                      {d.task_priority}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-[11px] font-medium ${isUrgent ? "text-red-300" : "text-slate-300"}`}>
-                        <span className="font-semibold text-slate-400">{d.task_team_name}</span>
-                        <span className="text-slate-600 mx-1.5">needs</span>
-                        <span>{d.task_deliverable}</span>
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] text-slate-600">{d.task_status}</span>
-                        {d.note && (
-                          <span className="text-[9px] text-slate-500 italic" title={d.note}>
-                            &mdash; &quot;{d.note}&quot;
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {isUrgent && (
-                      <span className="text-[9px] text-red-400 font-semibold flex-shrink-0 px-1.5 py-0.5 bg-red-500/10 rounded mt-0.5">
-                        URGENT
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
       </>
       )}
     </div>
