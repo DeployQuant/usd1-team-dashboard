@@ -3,18 +3,94 @@
 @tailwind utilities;
 
 :root {
-  --foreground: #0a0a0a;
-  --background: #f8f9fa;
+  --navy-950: #040a18;
+  --navy-900: #0a1628;
+  --navy-800: #111d35;
+  --navy-700: #1a2a4a;
+  --navy-600: #243a5e;
+  --cyan-400: #22d3ee;
+  --cyan-500: #06b6d4;
+  --gold-400: #d4a843;
+  --gold-500: #c49a2e;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #e2e8f0;
+  background: var(--navy-950);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Animated gradient background for login */
+.login-bg {
+  background: linear-gradient(135deg, #040a18 0%, #0a1628 25%, #111d35 50%, #0d1a2d 75%, #040a18 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Glowing border effect */
+.glow-border {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.1), 0 0 20px rgba(34, 211, 238, 0.05);
+}
+
+.glow-border:hover {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.2), 0 0 30px rgba(34, 211, 238, 0.1);
+}
+
+/* Gold accent glow */
+.gold-glow {
+  box-shadow: 0 0 20px rgba(212, 168, 67, 0.15);
+}
+
+/* Ring chart */
+.ring-chart {
+  transform: rotate(-90deg);
+}
+
+.ring-track {
+  stroke: rgba(255, 255, 255, 0.06);
+}
+
+.ring-fill {
+  transition: stroke-dashoffset 1s ease-in-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--navy-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--navy-600);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--navy-700);
+}
+
+/* Pulse animation for health indicators */
+@keyframes healthPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.health-pulse {
+  animation: healthPulse 2s ease-in-out infinite;
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
+    scrollbar-color: var(--navy-600) var(--navy-900);
   }
 }
