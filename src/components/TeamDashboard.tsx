@@ -17,6 +17,21 @@ interface Task {
   updated_at: string;
 }
 
+// Grouped status buckets matching KPI cards
+const STATUS_GROUPS: Record<string, { label: string; statuses: string[]; dot: string; text: string }> = {
+  ACTIVE: { label: "Active", statuses: ["IN PROGRESS", "IN FLIGHT", "REVIEW"], dot: "bg-cyan-400", text: "text-cyan-400" },
+  OPEN: { label: "Open", statuses: ["OPEN", "PLANNED"], dot: "bg-slate-500", text: "text-slate-300" },
+  BLOCKED: { label: "Blocked", statuses: ["BLOCKED", "AUDIT-GATED", "PENDING AUDIT"], dot: "bg-orange-400", text: "text-orange-400" },
+  DONE: { label: "Done", statuses: ["COMPLETED", "DONE"], dot: "bg-emerald-400", text: "text-emerald-400" },
+};
+
+function getGroupForStatus(status: string): string {
+  for (const [group, config] of Object.entries(STATUS_GROUPS)) {
+    if (config.statuses.includes(status)) return group;
+  }
+  return "OPEN";
+}
+
 export default function TeamDashboard({
   tasks: initialTasks,
   teamName,
@@ -29,7 +44,7 @@ export default function TeamDashboard({
   readOnly?: boolean;
 }) {
   const [tasks, setTasks] = useState(initialTasks);
-  const [filterStatus, setFilterStatus] = useState("ALL");
+  const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterCategory, setFilterCategory] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -38,33 +53,31 @@ export default function TeamDashboard({
     return Array.from(cats).sort();
   }, [tasks]);
 
-  const statuses = useMemo(() => {
-    const s = new Set(tasks.map((t) => t.status));
-    return Array.from(s).sort();
+  // Which raw statuses actually exist in the data
+  const rawStatuses = useMemo(() => {
+    return new Set(tasks.map((t) => t.status));
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
-      if (filterStatus !== "ALL" && t.status !== filterStatus) return false;
+      if (filterGroup !== "ALL") {
+        const group = STATUS_GROUPS[filterGroup];
+        if (group && !group.statuses.includes(t.status)) return false;
+      }
       if (filterCategory !== "ALL" && t.category !== filterCategory) return false;
       if (searchQuery && !t.deliverable.toLowerCase().includes(searchQuery.toLowerCase()) &&
           !t.owner.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [tasks, filterStatus, filterCategory, searchQuery]);
+  }, [tasks, filterGroup, filterCategory, searchQuery]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
-    const completed = tasks.filter((t) => t.status === "COMPLETED" || t.status === "DONE").length;
-    const inProgress = tasks.filter((t) =>
-      ["IN PROGRESS", "IN FLIGHT", "REVIEW"].includes(t.status)
-    ).length;
-    const blocked = tasks.filter((t) =>
-      ["BLOCKED", "AUDIT-GATED"].includes(t.status)
-    ).length;
-    const open = tasks.filter((t) => t.status === "OPEN" || t.status === "PLANNED").length;
-    const critical = tasks.filter((t) => t.priority === "CRITICAL" && t.status !== "COMPLETED").length;
-    return { total, completed, inProgress, blocked, open, critical };
+    const completed = tasks.filter((t) => STATUS_GROUPS.DONE.statuses.includes(t.status)).length;
+    const inProgress = tasks.filter((t) => STATUS_GROUPS.ACTIVE.statuses.includes(t.status)).length;
+    const blocked = tasks.filter((t) => STATUS_GROUPS.BLOCKED.statuses.includes(t.status)).length;
+    const open = tasks.filter((t) => STATUS_GROUPS.OPEN.statuses.includes(t.status)).length;
+    return { total, completed, inProgress, blocked, open };
   }, [tasks]);
 
   async function handleUpdate(id: number, data: any) {
@@ -79,7 +92,12 @@ export default function TeamDashboard({
     }
   }
 
+  function handleKpiClick(group: string) {
+    setFilterGroup((prev) => (prev === group ? "ALL" : group));
+  }
+
   const progressPct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+  const isBlocked = filterGroup === "BLOCKED";
 
   // Status distribution for bar chart
   const statusDist = useMemo(() => {
@@ -100,7 +118,25 @@ export default function TeamDashboard({
     "COMPLETED": "bg-emerald-500",
     "DONE": "bg-emerald-500",
     "BLOCKED": "bg-red-500",
+    "PENDING AUDIT": "bg-orange-400",
   };
+
+  // Build dropdown options: grouped buckets first, then individual raw statuses
+  const dropdownOptions = useMemo(() => {
+    const options: { value: string; label: string; isGroup: boolean }[] = [];
+    for (const [key, config] of Object.entries(STATUS_GROUPS)) {
+      const count = tasks.filter((t) => config.statuses.includes(t.status)).length;
+      if (count > 0) {
+        const subLabels = config.statuses.filter((s) => rawStatuses.has(s));
+        options.push({
+          value: key,
+          label: `${config.label} (${count}) — ${subLabels.join(", ")}`,
+          isGroup: true,
+        });
+      }
+    }
+    return options;
+  }, [tasks, rawStatuses]);
 
   return (
     <div>
@@ -111,46 +147,97 @@ export default function TeamDashboard({
           <ProgressRing percentage={progressPct} size={90} color="#22d3ee" label="Complete" />
         </div>
 
-        {/* KPI cards */}
-        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4">
+        {/* Total — clicking shows ALL */}
+        <button
+          onClick={() => handleKpiClick("ALL")}
+          className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+            filterGroup === "ALL"
+              ? "border-slate-400/30 ring-1 ring-slate-400/20"
+              : "border-white/[0.04] hover:border-white/[0.08]"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-slate-400" />
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Total</span>
           </div>
           <div className="text-2xl font-bold text-white">{stats.total}</div>
-        </div>
+        </button>
 
-        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4">
+        {/* Active */}
+        <button
+          onClick={() => handleKpiClick("ACTIVE")}
+          className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+            filterGroup === "ACTIVE"
+              ? "border-cyan-400/30 ring-1 ring-cyan-400/20"
+              : "border-white/[0.04] hover:border-white/[0.08]"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-cyan-400" />
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Active</span>
           </div>
           <div className="text-2xl font-bold text-cyan-400">{stats.inProgress}</div>
-        </div>
+          {filterGroup === "ACTIVE" && (
+            <div className="text-[9px] text-cyan-600 mt-1">In Progress, In Flight, Review</div>
+          )}
+        </button>
 
-        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4">
+        {/* Open */}
+        <button
+          onClick={() => handleKpiClick("OPEN")}
+          className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+            filterGroup === "OPEN"
+              ? "border-slate-400/30 ring-1 ring-slate-400/20"
+              : "border-white/[0.04] hover:border-white/[0.08]"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-slate-500" />
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Open</span>
           </div>
           <div className="text-2xl font-bold text-slate-300">{stats.open}</div>
-        </div>
+          {filterGroup === "OPEN" && (
+            <div className="text-[9px] text-slate-600 mt-1">Open, Planned</div>
+          )}
+        </button>
 
-        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4">
+        {/* Blocked */}
+        <button
+          onClick={() => handleKpiClick("BLOCKED")}
+          className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+            filterGroup === "BLOCKED"
+              ? "border-orange-400/30 ring-1 ring-orange-400/20"
+              : "border-white/[0.04] hover:border-white/[0.08]"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-orange-400" />
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Blocked</span>
           </div>
           <div className="text-2xl font-bold text-orange-400">{stats.blocked}</div>
-        </div>
+          {filterGroup === "BLOCKED" && (
+            <div className="text-[9px] text-orange-600 mt-1">Blocked, Audit-Gated</div>
+          )}
+        </button>
 
-        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4">
+        {/* Done */}
+        <button
+          onClick={() => handleKpiClick("DONE")}
+          className={`bg-[#0d1a2d] border rounded-xl p-4 text-left transition-all duration-200 ${
+            filterGroup === "DONE"
+              ? "border-emerald-400/30 ring-1 ring-emerald-400/20"
+              : "border-white/[0.04] hover:border-white/[0.08]"
+          }`}
+        >
           <div className="flex items-center gap-2 mb-1">
             <div className="w-2 h-2 rounded-full bg-emerald-400" />
             <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Done</span>
           </div>
           <div className="text-2xl font-bold text-emerald-400">{stats.completed}</div>
-        </div>
+          {filterGroup === "DONE" && (
+            <div className="text-[9px] text-emerald-600 mt-1">Completed</div>
+          )}
+        </button>
       </div>
 
       {/* Status Distribution Bar */}
@@ -159,27 +246,53 @@ export default function TeamDashboard({
           <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Status Distribution</span>
           <span className="text-[10px] text-slate-600">{stats.total} deliverables</span>
         </div>
-        {/* Stacked bar */}
         <div className="h-3 rounded-full overflow-hidden flex bg-white/[0.03]">
           {statusDist.map(([s, count]) => (
             <div
               key={s}
-              className={`${statusBarColors[s] || "bg-slate-600"} transition-all duration-500`}
+              className={`${statusBarColors[s] || "bg-slate-600"} transition-all duration-500 cursor-pointer hover:opacity-80`}
               style={{ width: `${(count / stats.total) * 100}%` }}
               title={`${s}: ${count}`}
+              onClick={() => {
+                const group = getGroupForStatus(s);
+                handleKpiClick(group);
+              }}
             />
           ))}
         </div>
-        {/* Legend */}
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
           {statusDist.map(([s, count]) => (
-            <div key={s} className="flex items-center gap-1.5">
+            <button
+              key={s}
+              className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+              onClick={() => {
+                const group = getGroupForStatus(s);
+                handleKpiClick(group);
+              }}
+            >
               <div className={`w-2 h-2 rounded-sm ${statusBarColors[s] || "bg-slate-600"}`} />
               <span className="text-[10px] text-slate-500">{s} ({count})</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
+
+      {/* Active filter indicator */}
+      {filterGroup !== "ALL" && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-[10px] text-slate-600 uppercase tracking-wider">Filtered by:</span>
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${STATUS_GROUPS[filterGroup]?.text || "text-slate-300"} bg-white/[0.04]`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${STATUS_GROUPS[filterGroup]?.dot || "bg-slate-400"}`} />
+            {STATUS_GROUPS[filterGroup]?.label || filterGroup}
+          </span>
+          <button
+            onClick={() => setFilterGroup("ALL")}
+            className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors ml-1"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -194,13 +307,13 @@ export default function TeamDashboard({
           />
         </div>
         <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
+          value={filterGroup}
+          onChange={(e) => setFilterGroup(e.target.value)}
           className="px-3 py-2.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
         >
           <option value="ALL" className="bg-[#0d1a2d]">All Statuses</option>
-          {statuses.map((s) => (
-            <option key={s} value={s} className="bg-[#0d1a2d]">{s}</option>
+          {dropdownOptions.map((opt) => (
+            <option key={opt.value} value={opt.value} className="bg-[#0d1a2d]">{opt.label}</option>
           ))}
         </select>
         <select
@@ -214,6 +327,21 @@ export default function TeamDashboard({
           ))}
         </select>
       </div>
+
+      {/* Blocked banner when viewing blocked tasks */}
+      {isBlocked && filteredTasks.length > 0 && (
+        <div className="mb-4 bg-orange-500/5 border border-orange-500/10 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+            <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">
+              {filteredTasks.length} Blocked / Gated Deliverable{filteredTasks.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            These tasks are waiting on dependencies, audits, or external approvals. Notes and blocking reasons are shown below.
+          </p>
+        </div>
+      )}
 
       {/* Task List */}
       <div className="space-y-2">
@@ -232,6 +360,7 @@ export default function TeamDashboard({
               task={task}
               onUpdate={handleUpdate}
               readOnly={readOnly}
+              forceExpand={isBlocked}
             />
           ))
         )}

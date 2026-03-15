@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import StatusBadge from "./StatusBadge";
 
 interface Task {
@@ -38,13 +38,19 @@ export default function TaskCard({
   task,
   onUpdate,
   readOnly = false,
+  forceExpand = false,
 }: {
   task: Task;
   onUpdate: (id: number, data: any) => Promise<void>;
   readOnly?: boolean;
+  forceExpand?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(forceExpand);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (forceExpand) setExpanded(true);
+  }, [forceExpand]);
   const [status, setStatus] = useState(task.status);
   const [owner, setOwner] = useState(task.owner);
   const [notes, setNotes] = useState(task.notes || "");
