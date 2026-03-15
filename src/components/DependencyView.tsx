@@ -116,6 +116,23 @@ export default function DependencyView({ teams }: { teams: Team[] }) {
     return Object.values(counts).sort((a, b) => b.outCount - a.outCount);
   }, [dependencies]);
 
+  // Group all dependencies by the team being depended upon (for the detailed list)
+  const groupedByDepTeam = useMemo(() => {
+    const groups: Record<string, { slug: string; name: string; deps: DeptDependency[] }> = {};
+    dependencies.forEach((d) => {
+      if (!groups[d.depends_on_team_slug]) {
+        groups[d.depends_on_team_slug] = {
+          slug: d.depends_on_team_slug,
+          name: d.dep_team_name,
+          deps: [],
+        };
+      }
+      groups[d.depends_on_team_slug].deps.push(d);
+    });
+    // Sort groups by number of deps descending (biggest bottleneck first)
+    return Object.values(groups).sort((a, b) => b.deps.length - a.deps.length);
+  }, [dependencies]);
+
   const [expandedFlow, setExpandedFlow] = useState<string | null>(null);
 
   if (loading) {
@@ -257,6 +274,88 @@ export default function DependencyView({ teams }: { teams: Team[] }) {
             <svg className="w-8 h-8 text-slate-700 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
             <p className="text-slate-600 text-xs">No department dependencies configured yet.</p>
             <p className="text-slate-700 text-[10px] mt-1">Teams can add dependencies from their task cards.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Cross-Team Dependencies — detailed list grouped by depended-upon team */}
+      {groupedByDepTeam.length > 0 && (
+        <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-5">
+          <h3 className="text-[10px] text-slate-500 uppercase tracking-wider font-medium mb-4">
+            Cross-Team Dependencies — Who Is Waiting on Whom
+          </h3>
+          <div className="space-y-5">
+            {groupedByDepTeam.map((group) => {
+              const colors = teamColors[group.slug] || teamColors["engineering"];
+              const urgentCount = group.deps.filter(
+                (d) => d.task_priority === "CRITICAL" || d.task_status === "BLOCKED"
+              ).length;
+              return (
+                <div key={group.slug}>
+                  {/* Group header */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className={`px-3 py-1 rounded-lg ${colors.bg} ${colors.text} text-xs font-semibold border ${colors.border}`}>
+                      {group.name}
+                    </div>
+                    <span className="text-[10px] text-slate-500">
+                      {group.deps.length} team{group.deps.length !== 1 ? "s" : ""} waiting
+                    </span>
+                    {urgentCount > 0 && (
+                      <span className="text-[9px] text-red-400 font-semibold px-1.5 py-0.5 bg-red-500/10 rounded">
+                        {urgentCount} URGENT
+                      </span>
+                    )}
+                  </div>
+                  {/* Individual dependency rows */}
+                  <div className="space-y-1 ml-2 pl-3 border-l-2 border-white/[0.06]">
+                    {group.deps.map((d) => {
+                      const isUrgent = d.task_priority === "CRITICAL" || d.task_status === "BLOCKED";
+                      const fromColors = teamColors[d.task_team_slug] || teamColors["engineering"];
+                      return (
+                        <div
+                          key={d.id}
+                          className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${
+                            isUrgent
+                              ? "bg-red-500/5 border-red-500/15"
+                              : "bg-white/[0.02] border-white/[0.04]"
+                          }`}
+                        >
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0 mt-0.5 ${
+                            d.task_priority === "CRITICAL" ? "text-red-400 bg-red-500/10" :
+                            d.task_priority === "HIGH" ? "text-amber-400 bg-amber-500/10" :
+                            "text-slate-400 bg-slate-500/10"
+                          }`}>
+                            {d.task_priority}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[11px] ${isUrgent ? "text-red-300" : "text-slate-300"}`}>
+                              <span className={`font-semibold ${fromColors.text}`}>{d.task_team_name}</span>
+                              <span className="text-slate-600 mx-1">is waiting on</span>
+                              <span className={`font-semibold ${colors.text}`}>{group.name}</span>
+                              <span className="text-slate-600 mx-1">for</span>
+                              <span className="font-medium">{d.task_deliverable}</span>
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[9px] text-slate-600">{d.task_status}</span>
+                              {d.note && (
+                                <span className="text-[9px] text-slate-500 italic">
+                                  &mdash; &quot;{d.note}&quot;
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {isUrgent && (
+                            <span className="text-[9px] text-red-400 font-semibold flex-shrink-0 px-1.5 py-0.5 bg-red-500/10 rounded mt-0.5">
+                              URGENT
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
