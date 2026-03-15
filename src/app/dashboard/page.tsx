@@ -346,6 +346,7 @@ export default function DashboardPage() {
                 <TeamDashboard
                   tasks={allTeams.find((t) => t.slug === activeTeamTab)?.tasks || []}
                   teamName={allTeams.find((t) => t.slug === activeTeamTab)?.name || ""}
+                  teamSlug={activeTeamTab}
                   pillar={allTeams.find((t) => t.slug === activeTeamTab)?.pillar || ""}
                   readOnly={false}
                   onRefresh={() => fetchData("leadership")}
@@ -393,6 +394,7 @@ export default function DashboardPage() {
             <TeamDashboard
               tasks={tasks}
               teamName={session.team.name}
+              teamSlug={session.team.slug}
               pillar={session.team.pillar || ""}
               onRefresh={() => fetchData(session.team.slug)}
             />

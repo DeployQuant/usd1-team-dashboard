@@ -33,24 +33,55 @@ function getGroupForStatus(status: string): string {
   return "OPEN";
 }
 
+interface IncomingDep {
+  task_id: number;
+  task_deliverable: string;
+  task_status: string;
+  task_priority: string;
+  task_team_name: string;
+  task_team_slug: string;
+  note: string;
+}
+
 export default function TeamDashboard({
   tasks: initialTasks,
   teamName,
+  teamSlug,
   pillar,
   readOnly = false,
   onRefresh,
 }: {
   tasks: Task[];
   teamName: string;
+  teamSlug?: string;
   pillar: string;
   readOnly?: boolean;
   onRefresh?: () => void;
 }) {
   const [tasks, setTasks] = useState(initialTasks);
+  const [incomingDeps, setIncomingDeps] = useState<IncomingDep[]>([]);
 
   useEffect(() => {
     setTasks(initialTasks);
   }, [initialTasks]);
+
+  // Fetch incoming dependencies (tasks from OTHER teams that depend on this team)
+  useEffect(() => {
+    if (!teamSlug || teamSlug === "leadership") return;
+    async function fetchIncoming() {
+      try {
+        const res = await fetch("/api/dependencies");
+        if (res.ok) {
+          const data = await res.json();
+          const incoming = (data.dependencies || []).filter(
+            (d: any) => d.depends_on_team_slug === teamSlug
+          );
+          setIncomingDeps(incoming);
+        }
+      } catch { /* ignore */ }
+    }
+    fetchIncoming();
+  }, [teamSlug, initialTasks]);
 
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterCategory, setFilterCategory] = useState("ALL");
@@ -413,10 +444,51 @@ export default function TeamDashboard({
               onDepsChange={onRefresh}
               readOnly={readOnly}
               forceExpand={isBlocked}
+              currentTeamSlug={teamSlug}
             />
           ))
         )}
       </div>
+
+      {/* Incoming Dependencies Section */}
+      {teamSlug && teamSlug !== "leadership" && incomingDeps.length > 0 && (
+        <div className="mt-6 bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
+            <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+              Incoming Dependencies ({incomingDeps.length})
+            </h3>
+          </div>
+          <p className="text-[10px] text-slate-600 mb-3">
+            Tasks from other teams that depend on {teamName}
+          </p>
+          <div className="space-y-1.5">
+            {incomingDeps.map((d, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-white/[0.02] border-white/[0.04]">
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0 ${
+                  d.task_priority === "CRITICAL" ? "text-red-400 bg-red-500/10" :
+                  d.task_priority === "HIGH" ? "text-amber-400 bg-amber-500/10" :
+                  "text-slate-400 bg-slate-500/10"
+                }`}>
+                  {d.task_priority}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-slate-300 truncate">{d.task_deliverable}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-slate-500">{d.task_team_name}</span>
+                    <span className="text-[9px] text-slate-600">{d.task_status}</span>
+                  </div>
+                </div>
+                {d.note && (
+                  <span className="text-[9px] text-slate-500 italic flex-shrink-0 max-w-[200px] truncate" title={d.note}>
+                    {d.note}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       </>
       )}
     </div>

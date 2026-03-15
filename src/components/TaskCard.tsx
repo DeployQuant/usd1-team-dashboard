@@ -3,13 +3,10 @@
 import { useState, useEffect } from "react";
 import StatusBadge from "./StatusBadge";
 
-interface DepLink {
-  id: number;
-  deliverable: string;
-  status: string;
-  priority: string;
+interface DeptDep {
+  depends_on_team_slug: string;
   team_name: string;
-  team_slug: string;
+  note: string;
 }
 
 interface Task {
@@ -24,8 +21,7 @@ interface Task {
   notes: string;
   updated_at: string;
   comment_count?: number;
-  depends_on?: DepLink[];
-  blocking?: DepLink[];
+  dept_dependencies?: DeptDep[];
 }
 
 interface Comment {
@@ -37,14 +33,13 @@ interface Comment {
   created_at: string;
 }
 
-interface PickerTask {
-  id: number;
-  deliverable: string;
-  status: string;
-  priority: string;
-  team_name: string;
-  team_slug: string;
-}
+const ALL_TEAMS = [
+  { slug: "engineering", name: "Engineering" },
+  { slug: "bd", name: "Business Development" },
+  { slug: "defi", name: "DeFi/Exchange" },
+  { slug: "legal", name: "Legal & Compliance" },
+  { slug: "marketing", name: "Marketing" },
+];
 
 const STATUS_OPTIONS = [
   "OPEN",
@@ -64,13 +59,13 @@ const priorityConfig: Record<string, { color: string; label: string }> = {
   LOW: { color: "text-slate-500 bg-slate-500/5 border-slate-500/10", label: "LOW" },
 };
 
-function isRisk(status: string) {
-  return !["COMPLETED", "DONE"].includes(status);
-}
-
-function isBlockedStatus(status: string) {
-  return ["BLOCKED", "AUDIT-GATED", "PENDING AUDIT"].includes(status);
-}
+const teamColorMap: Record<string, string> = {
+  engineering: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+  bd: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  defi: "text-violet-400 bg-violet-500/10 border-violet-500/20",
+  legal: "text-rose-400 bg-rose-500/10 border-rose-500/20",
+  marketing: "text-orange-400 bg-orange-500/10 border-orange-500/20",
+};
 
 export default function TaskCard({
   task,
@@ -78,12 +73,14 @@ export default function TaskCard({
   onDepsChange,
   readOnly = false,
   forceExpand = false,
+  currentTeamSlug,
 }: {
   task: Task;
   onUpdate: (id: number, data: any) => Promise<void>;
   onDepsChange?: () => void;
   readOnly?: boolean;
   forceExpand?: boolean;
+  currentTeamSlug?: string;
 }) {
   const [expanded, setExpanded] = useState(forceExpand);
   const [editing, setEditing] = useState(false);
@@ -104,25 +101,26 @@ export default function TaskCard({
   const [submittingComment, setSubmittingComment] = useState(false);
   const [localCommentCount, setLocalCommentCount] = useState(task.comment_count || 0);
 
-  // Dependency management state
+  // Department dependency state
   const [showAddDep, setShowAddDep] = useState(false);
-  const [allPickerTasks, setAllPickerTasks] = useState<PickerTask[]>([]);
-  const [loadingPicker, setLoadingPicker] = useState(false);
-  const [depSearch, setDepSearch] = useState("");
   const [savingDep, setSavingDep] = useState(false);
-  const [localDependsOn, setLocalDependsOn] = useState<DepLink[]>(task.depends_on || []);
-  const [localBlocking, setLocalBlocking] = useState<DepLink[]>(task.blocking || []);
+  const [depNote, setDepNote] = useState("");
+  const [selectedDepTeam, setSelectedDepTeam] = useState<string | null>(null);
+  const [localDeptDeps, setLocalDeptDeps] = useState<DeptDep[]>(task.dept_dependencies || []);
 
   // Sync local deps when task prop changes
   useEffect(() => {
-    setLocalDependsOn(task.depends_on || []);
-    setLocalBlocking(task.blocking || []);
-  }, [task.depends_on, task.blocking]);
+    setLocalDeptDeps(task.dept_dependencies || []);
+  }, [task.dept_dependencies]);
 
   const isCompleted = task.status === "COMPLETED" || task.status === "DONE";
   const pConfig = priorityConfig[task.priority] || priorityConfig["MEDIUM"];
+  const hasDeps = localDeptDeps.length > 0;
 
-  const hasRiskyDep = localDependsOn.some((d) => isRisk(d.status));
+  // Available teams to add (exclude own team and already-linked teams)
+  const availableTeams = ALL_TEAMS.filter(
+    (t) => t.slug !== currentTeamSlug && !localDeptDeps.some((d) => d.depends_on_team_slug === t.slug)
+  );
 
   async function handleSave() {
     setSaving(true);
@@ -181,46 +179,25 @@ export default function TaskCard({
     }
   }
 
-  // Dependency management
-  async function loadPickerTasks() {
-    if (allPickerTasks.length > 0) return; // already loaded
-    setLoadingPicker(true);
-    try {
-      const res = await fetch("/api/tasks/all");
-      if (res.ok) {
-        const data = await res.json();
-        setAllPickerTasks(data.tasks || []);
-      }
-    } finally {
-      setLoadingPicker(false);
-    }
-  }
-
-  async function handleOpenAddDep(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!showAddDep) {
-      await loadPickerTasks();
-    }
-    setShowAddDep(!showAddDep);
-    setDepSearch("");
-  }
-
-  async function handleAddDep(depTaskId: number) {
+  // Department dependency management
+  async function handleAddDeptDep(teamSlug: string) {
     setSavingDep(true);
     try {
       const res = await fetch("/api/dependencies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: task.id, depends_on_task_id: depTaskId }),
+        body: JSON.stringify({ task_id: task.id, depends_on_team_slug: teamSlug, note: depNote.trim() }),
       });
       if (res.ok) {
-        // Add to local state immediately
-        const added = allPickerTasks.find((t) => t.id === depTaskId);
-        if (added) {
-          setLocalDependsOn((prev) => [...prev, added]);
-        }
+        const team = ALL_TEAMS.find((t) => t.slug === teamSlug);
+        setLocalDeptDeps((prev) => [...prev, {
+          depends_on_team_slug: teamSlug,
+          team_name: team?.name || teamSlug,
+          note: depNote.trim(),
+        }]);
+        setDepNote("");
+        setSelectedDepTeam(null);
         setShowAddDep(false);
-        setDepSearch("");
         onDepsChange?.();
       }
     } finally {
@@ -228,32 +205,22 @@ export default function TaskCard({
     }
   }
 
-  async function handleRemoveDep(e: React.MouseEvent, depTaskId: number) {
+  async function handleRemoveDeptDep(e: React.MouseEvent, teamSlug: string) {
     e.stopPropagation();
     try {
       await fetch("/api/dependencies", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: task.id, depends_on_task_id: depTaskId }),
+        body: JSON.stringify({ task_id: task.id, depends_on_team_slug: teamSlug }),
       });
-      setLocalDependsOn((prev) => prev.filter((d) => d.id !== depTaskId));
+      setLocalDeptDeps((prev) => prev.filter((d) => d.depends_on_team_slug !== teamSlug));
       onDepsChange?.();
     } catch { /* ignore */ }
   }
 
-  // Filter picker tasks: exclude self, already-linked, and match search
-  const filteredPickerTasks = allPickerTasks.filter((t) => {
-    if (t.id === task.id) return false;
-    if (localDependsOn.some((d) => d.id === t.id)) return false;
-    if (!depSearch) return true;
-    const q = depSearch.toLowerCase();
-    return t.deliverable.toLowerCase().includes(q) || t.team_name.toLowerCase().includes(q);
-  });
-
   return (
     <div className={`bg-[#0d1a2d] border rounded-xl hover:border-white/[0.08] transition-all duration-200 ${
       isCompleted ? "opacity-50 border-white/[0.04]" :
-      hasRiskyDep ? "border-red-500/20" :
       "border-white/[0.04]"
     }`}>
       <div
@@ -290,19 +257,11 @@ export default function TaskCard({
                 {localCommentCount}
               </button>
             )}
-            {/* Dependency indicators */}
-            {localDependsOn.length > 0 && (
-              <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${
-                hasRiskyDep ? "text-red-400 bg-red-500/10" : "text-emerald-400 bg-emerald-500/10"
-              }`}>
+            {/* Department dependency indicator */}
+            {hasDeps && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                {localDependsOn.length} dep{localDependsOn.length !== 1 ? "s" : ""}
-              </span>
-            )}
-            {localBlocking.length > 0 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                blocks {localBlocking.length}
+                {localDeptDeps.length} dept{localDeptDeps.length !== 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -336,15 +295,15 @@ export default function TaskCard({
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-white/[0.04] pt-3 ml-3.5">
-          {/* DEPENDS ON section */}
+          {/* DEPENDS ON DEPARTMENTS section */}
           <div className="mb-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">
-                Depends On {localDependsOn.length > 0 && `(${localDependsOn.length})`}
+                Depends On {hasDeps && `(${localDeptDeps.length})`}
               </span>
-              {!readOnly && (
+              {!readOnly && availableTeams.length > 0 && (
                 <button
-                  onClick={handleOpenAddDep}
+                  onClick={(e) => { e.stopPropagation(); setShowAddDep(!showAddDep); setDepNote(""); setSelectedDepTeam(null); }}
                   className="text-[10px] text-cyan-400 hover:text-cyan-300 font-semibold tracking-wide flex items-center gap-1 transition-colors"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
@@ -352,110 +311,78 @@ export default function TaskCard({
                 </button>
               )}
             </div>
-            {localDependsOn.length > 0 ? (
+            {hasDeps ? (
               <div className="space-y-1">
-                {localDependsOn.map((d) => (
-                  <div key={d.id} className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md border ${
-                    isBlockedStatus(d.status) ? "bg-red-500/8 border-red-500/20 text-red-300" :
-                    isRisk(d.status) ? "bg-orange-500/5 border-orange-500/15 text-orange-300" :
-                    "bg-emerald-500/5 border-emerald-500/15 text-emerald-300"
-                  }`}>
-                    <StatusBadge status={d.status} />
-                    <span className="truncate flex-1">{d.deliverable}</span>
-                    <span className="text-[9px] text-slate-500 flex-shrink-0">{d.team_name}</span>
-                    {isBlockedStatus(d.status) && (
-                      <span className="text-[9px] text-red-400 font-semibold flex-shrink-0 px-1 py-0.5 bg-red-500/10 rounded">BLOCKER</span>
-                    )}
-                    {isRisk(d.status) && !isBlockedStatus(d.status) && (
-                      <span className="text-[9px] text-orange-400 font-semibold flex-shrink-0">AT RISK</span>
-                    )}
-                    {!readOnly && (
-                      <button
-                        onClick={(e) => handleRemoveDep(e, d.id)}
-                        className="text-slate-700 hover:text-red-400 transition-colors flex-shrink-0 ml-1"
-                        title="Remove dependency"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                      </button>
-                    )}
-                  </div>
-                ))}
+                {localDeptDeps.map((d) => {
+                  const colors = teamColorMap[d.depends_on_team_slug] || "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                  return (
+                    <div key={d.depends_on_team_slug} className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-md border ${colors}`}>
+                      <span className="font-semibold flex-shrink-0">{d.team_name}</span>
+                      {d.note && (
+                        <span className="text-[10px] text-slate-400 truncate flex-1 italic">&mdash; {d.note}</span>
+                      )}
+                      {!d.note && <span className="flex-1" />}
+                      {!readOnly && (
+                        <button
+                          onClick={(e) => handleRemoveDeptDep(e, d.depends_on_team_slug)}
+                          className="text-slate-700 hover:text-red-400 transition-colors flex-shrink-0 ml-1"
+                          title="Remove dependency"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : !showAddDep ? (
-              <p className="text-[10px] text-slate-700 italic">No dependencies linked.</p>
+              <p className="text-[10px] text-slate-700 italic">No department dependencies.</p>
             ) : null}
 
-            {/* Add dependency picker */}
+            {/* Add department dependency */}
             {showAddDep && (
               <div className="mt-2 bg-white/[0.02] rounded-lg border border-white/[0.06] p-2.5">
-                <input
-                  type="text"
-                  value={depSearch}
-                  onChange={(e) => setDepSearch(e.target.value)}
-                  placeholder="Search tasks by name or team..."
-                  className="w-full px-2.5 py-2 bg-white/[0.03] border border-white/[0.08] rounded-md text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 placeholder-slate-600 mb-2"
-                  autoFocus
-                />
-                {loadingPicker ? (
-                  <p className="text-[10px] text-slate-600 text-center py-2">Loading tasks...</p>
-                ) : (
-                  <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-0.5">
-                    {filteredPickerTasks.length === 0 ? (
-                      <p className="text-[10px] text-slate-600 text-center py-2">
-                        {depSearch ? "No matching tasks found." : "No available tasks to link."}
-                      </p>
-                    ) : (
-                      filteredPickerTasks.slice(0, 30).map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => handleAddDep(t.id)}
-                          disabled={savingDep}
-                          className="w-full flex items-center gap-2 text-left px-2 py-1.5 rounded-md hover:bg-white/[0.04] transition-colors disabled:opacity-30"
-                        >
-                          <StatusBadge status={t.status} />
-                          <span className="text-[11px] text-slate-300 truncate flex-1">{t.deliverable}</span>
-                          <span className="text-[9px] text-slate-600 flex-shrink-0">{t.team_name}</span>
-                        </button>
-                      ))
-                    )}
-                    {filteredPickerTasks.length > 30 && (
-                      <p className="text-[9px] text-slate-600 text-center pt-1">
-                        Showing 30 of {filteredPickerTasks.length} — narrow your search
-                      </p>
-                    )}
-                  </div>
+                <p className="text-[10px] text-slate-500 mb-2">Select a department:</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {availableTeams.map((t) => {
+                    const colors = teamColorMap[t.slug] || "text-slate-400 bg-slate-500/10 border-slate-500/20";
+                    const isSelected = selectedDepTeam === t.slug;
+                    return (
+                      <button
+                        key={t.slug}
+                        onClick={() => setSelectedDepTeam(isSelected ? null : t.slug)}
+                        className={`px-2.5 py-1.5 rounded-md border text-xs font-semibold transition-all ${
+                          isSelected
+                            ? `${colors} ring-2 ring-white/20`
+                            : `${colors} opacity-60 hover:opacity-100`
+                        }`}
+                      >
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedDepTeam && (
+                  <>
+                    <input
+                      type="text"
+                      value={depNote}
+                      onChange={(e) => setDepNote(e.target.value)}
+                      placeholder="Optional: what do you need from them?"
+                      className="w-full px-2.5 py-2 bg-white/[0.03] border border-white/[0.08] rounded-md text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 placeholder-slate-600 mb-2"
+                    />
+                    <button
+                      onClick={() => handleAddDeptDep(selectedDepTeam)}
+                      disabled={savingDep}
+                      className="px-4 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[11px] font-semibold rounded-md hover:from-cyan-400 hover:to-blue-500 disabled:opacity-30 tracking-wide"
+                    >
+                      {savingDep ? "SAVING..." : "SAVE"}
+                    </button>
+                  </>
                 )}
               </div>
             )}
           </div>
-
-          {/* BLOCKING section */}
-          {localBlocking.length > 0 && (
-            <div className="mb-3">
-              <span className="text-[10px] text-slate-600 uppercase tracking-wider font-medium">
-                Blocking ({localBlocking.length})
-              </span>
-              <div className="mt-1 space-y-1">
-                {localBlocking.map((d) => (
-                  <div key={d.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded-md border bg-amber-500/5 border-amber-500/15 text-amber-300">
-                    <StatusBadge status={d.status} />
-                    <span className="truncate flex-1">{d.deliverable}</span>
-                    <span className="text-[9px] text-slate-500 flex-shrink-0">{d.team_name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Risk warning banner */}
-          {hasRiskyDep && !isCompleted && (
-            <div className="mb-3 bg-red-500/5 border border-red-500/15 rounded-lg px-3 py-2 flex items-center gap-2">
-              <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-              <span className="text-[10px] text-red-300">
-                This task has {localDependsOn.filter((d) => isBlockedStatus(d.status)).length > 0 ? "blocked" : "incomplete"} dependencies that may put it at risk.
-              </span>
-            </div>
-          )}
 
           {!editing ? (
             <div>

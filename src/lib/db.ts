@@ -64,14 +64,14 @@ function initDb(db: Database.Database) {
       FOREIGN KEY (task_id) REFERENCES tasks(id)
     );
 
-    CREATE TABLE IF NOT EXISTS task_dependencies (
+    CREATE TABLE IF NOT EXISTS dept_dependencies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       task_id INTEGER NOT NULL,
-      depends_on_task_id INTEGER NOT NULL,
+      depends_on_team_slug TEXT NOT NULL,
+      note TEXT DEFAULT '',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (task_id) REFERENCES tasks(id),
-      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id),
-      UNIQUE(task_id, depends_on_task_id)
+      UNIQUE(task_id, depends_on_team_slug)
     );
   `);
 

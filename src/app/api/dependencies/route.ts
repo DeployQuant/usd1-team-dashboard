@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
 import { getDb } from "@/lib/db";
 
+// GET all department-level dependencies (for leadership view)
 export async function GET() {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
@@ -12,30 +13,24 @@ export async function GET() {
 
   const db = getDb();
 
-  // Get all dependencies with task and team info
   const dependencies = db
     .prepare(`
       SELECT
         d.id,
         d.task_id,
-        d.depends_on_task_id,
-        t1.deliverable as task_deliverable,
-        t1.status as task_status,
-        t1.priority as task_priority,
-        t1.team_id as task_team_id,
-        team1.name as task_team_name,
-        team1.slug as task_team_slug,
-        t2.deliverable as dep_deliverable,
-        t2.status as dep_status,
-        t2.priority as dep_priority,
-        t2.team_id as dep_team_id,
-        team2.name as dep_team_name,
-        team2.slug as dep_team_slug
-      FROM task_dependencies d
-      JOIN tasks t1 ON d.task_id = t1.id
-      JOIN tasks t2 ON d.depends_on_task_id = t2.id
-      JOIN teams team1 ON t1.team_id = team1.id
-      JOIN teams team2 ON t2.team_id = team2.id
+        d.depends_on_team_slug,
+        d.note,
+        d.created_at,
+        t.deliverable as task_deliverable,
+        t.status as task_status,
+        t.priority as task_priority,
+        src_team.name as task_team_name,
+        src_team.slug as task_team_slug,
+        dep_team.name as dep_team_name
+      FROM dept_dependencies d
+      JOIN tasks t ON d.task_id = t.id
+      JOIN teams src_team ON t.team_id = src_team.id
+      JOIN teams dep_team ON d.depends_on_team_slug = dep_team.slug
       ORDER BY d.created_at DESC
     `)
     .all();
@@ -43,36 +38,43 @@ export async function GET() {
   return NextResponse.json({ dependencies });
 }
 
+// POST: add a department dependency to a task
 export async function POST(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { task_id, depends_on_task_id } = await req.json();
+  const { task_id, depends_on_team_slug, note } = await req.json();
 
-  if (!task_id || !depends_on_task_id) {
-    return NextResponse.json({ error: "task_id and depends_on_task_id are required" }, { status: 400 });
-  }
-
-  if (task_id === depends_on_task_id) {
-    return NextResponse.json({ error: "A task cannot depend on itself" }, { status: 400 });
+  if (!task_id || !depends_on_team_slug) {
+    return NextResponse.json({ error: "task_id and depends_on_team_slug are required" }, { status: 400 });
   }
 
   const db = getDb();
 
-  // Verify both tasks exist
-  const t1 = db.prepare("SELECT id FROM tasks WHERE id = ?").get(Number(task_id));
-  const t2 = db.prepare("SELECT id FROM tasks WHERE id = ?").get(Number(depends_on_task_id));
-  if (!t1 || !t2) {
+  // Verify task exists
+  const task = db.prepare("SELECT id, team_id FROM tasks WHERE id = ?").get(Number(task_id)) as any;
+  if (!task) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
+  // Verify target team exists
+  const team = db.prepare("SELECT slug FROM teams WHERE slug = ?").get(depends_on_team_slug) as any;
+  if (!team) {
+    return NextResponse.json({ error: "Team not found" }, { status: 404 });
+  }
+
+  // Prevent self-dependency (task's own team)
+  const taskTeam = db.prepare("SELECT slug FROM teams WHERE id = ?").get(task.team_id) as any;
+  if (taskTeam?.slug === depends_on_team_slug) {
+    return NextResponse.json({ error: "Cannot depend on own team" }, { status: 400 });
+  }
+
   try {
-    db.prepare("INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)").run(
-      Number(task_id),
-      Number(depends_on_task_id)
-    );
+    db.prepare(
+      "INSERT INTO dept_dependencies (task_id, depends_on_team_slug, note) VALUES (?, ?, ?)"
+    ).run(Number(task_id), depends_on_team_slug, note || "");
   } catch (e: any) {
     if (e.message?.includes("UNIQUE")) {
       return NextResponse.json({ error: "Dependency already exists" }, { status: 409 });
@@ -83,19 +85,19 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
+// DELETE: remove a department dependency
 export async function DELETE(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { task_id, depends_on_task_id } = await req.json();
+  const { task_id, depends_on_team_slug } = await req.json();
 
   const db = getDb();
-  db.prepare("DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ?").run(
-    Number(task_id),
-    Number(depends_on_task_id)
-  );
+  db.prepare(
+    "DELETE FROM dept_dependencies WHERE task_id = ? AND depends_on_team_slug = ?"
+  ).run(Number(task_id), depends_on_team_slug);
 
   return NextResponse.json({ ok: true });
 }

@@ -5,28 +5,19 @@ import { SessionData, sessionOptions } from "@/lib/session";
 import { getDb } from "@/lib/db";
 
 function enrichTasks(db: any, tasks: any[]) {
-  // Add comment counts and dependency info to each task
+  // Add comment counts and department-level dependency info to each task
   const commentCountStmt = db.prepare("SELECT COUNT(*) as cnt FROM comments WHERE task_id = ?");
-  const dependsOnStmt = db.prepare(`
-    SELECT d.depends_on_task_id as id, t.deliverable, t.status, t.priority, team.name as team_name, team.slug as team_slug
-    FROM task_dependencies d
-    JOIN tasks t ON d.depends_on_task_id = t.id
-    JOIN teams team ON t.team_id = team.id
+  const deptDepsStmt = db.prepare(`
+    SELECT d.depends_on_team_slug, d.note, team.name as team_name
+    FROM dept_dependencies d
+    JOIN teams team ON d.depends_on_team_slug = team.slug
     WHERE d.task_id = ?
-  `);
-  const blockingStmt = db.prepare(`
-    SELECT d.task_id as id, t.deliverable, t.status, t.priority, team.name as team_name, team.slug as team_slug
-    FROM task_dependencies d
-    JOIN tasks t ON d.task_id = t.id
-    JOIN teams team ON t.team_id = team.id
-    WHERE d.depends_on_task_id = ?
   `);
 
   return tasks.map((task: any) => ({
     ...task,
     comment_count: (commentCountStmt.get(task.id) as any).cnt,
-    depends_on: dependsOnStmt.all(task.id),
-    blocking: blockingStmt.all(task.id),
+    dept_dependencies: deptDepsStmt.all(task.id),
   }));
 }
 
