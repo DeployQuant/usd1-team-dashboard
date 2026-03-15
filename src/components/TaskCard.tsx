@@ -20,6 +20,7 @@ interface Task {
   priority: string;
   notes: string;
   due_date?: string;
+  created_by_leadership?: number;
   updated_at: string;
   comment_count?: number;
   dept_dependencies?: DeptDep[];
@@ -324,6 +325,11 @@ export default function TaskCard({
               <span className="inline-flex items-center gap-1 text-[10px] text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
                 {localDeptDeps.length} dept{localDeptDeps.length !== 1 ? "s" : ""}
+              </span>
+            )}
+            {task.created_by_leadership === 1 && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                ⭐ Leadership
               </span>
             )}
           </div>

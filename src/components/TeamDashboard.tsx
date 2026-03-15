@@ -16,7 +16,13 @@ interface Task {
   priority: string;
   notes: string;
   due_date?: string;
+  created_by_leadership?: number;
   updated_at: string;
+}
+
+interface TeamMember {
+  id: number;
+  display_name: string;
 }
 
 // Grouped status buckets matching KPI cards
@@ -98,6 +104,45 @@ export default function TeamDashboard({
   const [filterPriority, setFilterPriority] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"tasks" | "timeline">("tasks");
+
+  // Add Task state
+  const [showAddTask, setShowAddTask] = useState(false);
+  const [newTask, setNewTask] = useState({ deliverable: "", priority: "MEDIUM", status: "OPEN", owner: "", due_date: "", notes: "", category: "", workstream: "" });
+  const [savingTask, setSavingTask] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
+  useEffect(() => {
+    if (!showAddTask || !teamSlug) return;
+    async function fetchMembers() {
+      const res = await fetch(`/api/teams/members?team=${teamSlug}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeamMembers(data.members || []);
+      }
+    }
+    fetchMembers();
+  }, [showAddTask, teamSlug]);
+
+  async function handleCreateTask() {
+    if (!newTask.deliverable.trim()) return;
+    setSavingTask(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newTask, team_slug: teamSlug }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks((prev) => [...prev, data.task]);
+        setNewTask({ deliverable: "", priority: "MEDIUM", status: "OPEN", owner: "", due_date: "", notes: "", category: "", workstream: "" });
+        setShowAddTask(false);
+        onRefresh?.();
+      }
+    } finally {
+      setSavingTask(false);
+    }
+  }
 
   const categories = useMemo(() => {
     const cats = new Set(tasks.map((t) => t.category).filter(Boolean));
@@ -409,6 +454,136 @@ export default function TeamDashboard({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add Task Button + Form */}
+      {!readOnly && (
+        <div className="mb-6">
+          {!showAddTask ? (
+            <button
+              onClick={() => setShowAddTask(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-cyan-500/15 transition-all"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              Add Task
+            </button>
+          ) : (
+            <div className="bg-[#0d1a2d] border border-cyan-500/20 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-white">New Task</h3>
+                <button onClick={() => setShowAddTask(false)} className="text-slate-500 hover:text-slate-300">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Task Name *</label>
+                  <input
+                    value={newTask.deliverable}
+                    onChange={(e) => setNewTask({ ...newTask, deliverable: e.target.value })}
+                    placeholder="What needs to be done?"
+                    className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 placeholder-slate-600"
+                    autoFocus
+                  />
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Priority</label>
+                    <select
+                      value={newTask.priority}
+                      onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                    >
+                      <option value="CRITICAL" className="bg-[#0d1a2d]">Critical</option>
+                      <option value="HIGH" className="bg-[#0d1a2d]">High</option>
+                      <option value="MEDIUM" className="bg-[#0d1a2d]">Medium</option>
+                      <option value="LOW" className="bg-[#0d1a2d]">Low</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Status</label>
+                    <select
+                      value={newTask.status}
+                      onChange={(e) => setNewTask({ ...newTask, status: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                    >
+                      <option value="OPEN" className="bg-[#0d1a2d]">Open</option>
+                      <option value="IN PROGRESS" className="bg-[#0d1a2d]">In Progress</option>
+                      <option value="PLANNED" className="bg-[#0d1a2d]">Planned</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Owner</label>
+                    <select
+                      value={newTask.owner}
+                      onChange={(e) => setNewTask({ ...newTask, owner: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                    >
+                      <option value="" className="bg-[#0d1a2d]">Unassigned</option>
+                      {teamMembers.map((m) => (
+                        <option key={m.id} value={m.display_name} className="bg-[#0d1a2d]">{m.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Due Date</label>
+                    <input
+                      type="date"
+                      value={newTask.due_date}
+                      onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value })}
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Category</label>
+                    <input
+                      value={newTask.category}
+                      onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
+                      placeholder="e.g. SDK, DeFi, OCC Charter"
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 placeholder-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Workstream</label>
+                    <input
+                      value={newTask.workstream}
+                      onChange={(e) => setNewTask({ ...newTask, workstream: e.target.value })}
+                      placeholder="e.g. 1.1, 2.3"
+                      className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 placeholder-slate-600"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider font-medium block mb-1.5">Notes</label>
+                  <textarea
+                    value={newTask.notes}
+                    onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
+                    rows={2}
+                    placeholder="Additional details..."
+                    className="w-full px-3 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 resize-none placeholder-slate-600"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleCreateTask}
+                    disabled={savingTask || !newTask.deliverable.trim()}
+                    className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-semibold rounded-lg hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 shadow-lg shadow-cyan-500/10 tracking-wide"
+                  >
+                    {savingTask ? "CREATING..." : "CREATE TASK"}
+                  </button>
+                  <button
+                    onClick={() => setShowAddTask(false)}
+                    className="px-4 py-2 border border-white/[0.08] text-slate-400 text-xs font-semibold rounded-lg hover:bg-white/[0.03] tracking-wide"
+                  >
+                    CANCEL
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

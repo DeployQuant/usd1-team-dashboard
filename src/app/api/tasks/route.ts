@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
-import { getDb } from "@/lib/db";
+import { getDb, auditLog } from "@/lib/db";
 
 function enrichTasks(db: any, tasks: any[]) {
   const commentCountStmt = db.prepare("SELECT COUNT(*) as cnt FROM comments WHERE task_id = ?");
@@ -50,4 +50,58 @@ export async function GET(req: NextRequest) {
   // Regular team sees only their tasks
   const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(session.activeTeamId);
   return NextResponse.json({ tasks: enrichTasks(db, tasks) });
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
+  if (!session.isLoggedIn) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.json();
+  const { deliverable, workstream, status, owner, priority, due_date, notes, category, team_slug } = body;
+
+  if (!deliverable || !deliverable.trim()) {
+    return NextResponse.json({ error: "Task name is required" }, { status: 400 });
+  }
+
+  const db = getDb();
+  const isLeadership = session.activeTeamSlug === "leadership";
+
+  // Determine target team
+  let teamId: number;
+  if (isLeadership && team_slug) {
+    const team = db.prepare("SELECT id FROM teams WHERE slug = ?").get(team_slug) as any;
+    if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
+    teamId = team.id;
+  } else {
+    teamId = session.activeTeamId!;
+  }
+
+  const result = db.prepare(
+    "INSERT INTO tasks (team_id, deliverable, workstream, status, owner, priority, due_date, notes, category, created_by_leadership) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).run(
+    teamId,
+    deliverable.trim(),
+    workstream || "",
+    status || "OPEN",
+    owner || "",
+    priority || "MEDIUM",
+    due_date || null,
+    notes || "",
+    category || "",
+    isLeadership ? 1 : 0
+  );
+
+  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(result.lastInsertRowid);
+
+  auditLog(db, session.userId!, session.userName || "Unknown", "task_create", {
+    taskId: result.lastInsertRowid,
+    deliverable: deliverable.trim(),
+    teamId,
+    priority: priority || "MEDIUM",
+    createdByLeadership: isLeadership,
+  }, "task", result.lastInsertRowid as number);
+
+  return NextResponse.json({ task: { ...(task as any), comment_count: 0, dept_dependencies: [] } }, { status: 201 });
 }

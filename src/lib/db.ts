@@ -70,6 +70,7 @@ function initDb(db: Database.Database) {
       notes TEXT DEFAULT '',
       priority TEXT DEFAULT 'MEDIUM',
       due_date TEXT DEFAULT NULL,
+      created_by_leadership INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (team_id) REFERENCES teams(id)
@@ -125,6 +126,13 @@ function initDb(db: Database.Database) {
     db.prepare("SELECT due_date FROM tasks LIMIT 1").get();
   } catch {
     db.exec("ALTER TABLE tasks ADD COLUMN due_date TEXT DEFAULT NULL");
+  }
+
+  // Migration: add created_by_leadership column if missing
+  try {
+    db.prepare("SELECT created_by_leadership FROM tasks LIMIT 1").get();
+  } catch {
+    db.exec("ALTER TABLE tasks ADD COLUMN created_by_leadership INTEGER DEFAULT 0");
   }
 
   // Check if teams are already seeded

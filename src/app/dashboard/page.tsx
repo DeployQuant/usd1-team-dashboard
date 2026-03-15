@@ -54,6 +54,13 @@ export default function DashboardPage() {
   const [leadershipView, setLeadershipView] = useState<"overview" | "timeline" | "dependencies" | "audit">("overview");
   const [showTeamSwitcher, setShowTeamSwitcher] = useState(false);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [showLeadershipAddTask, setShowLeadershipAddTask] = useState(false);
+  const [leadershipNewTask, setLeadershipNewTask] = useState({
+    deliverable: "", workstream: "", status: "OPEN", owner: "", priority: "MEDIUM",
+    due_date: "", notes: "", category: "", team_slug: "",
+  });
+  const [leadershipSavingTask, setLeadershipSavingTask] = useState(false);
+  const [leadershipTeamMembers, setLeadershipTeamMembers] = useState<{id: number; display_name: string}[]>([]);
   const router = useRouter();
 
   const fetchData = useCallback(async (teamSlug: string) => {
@@ -101,6 +108,38 @@ export default function DashboardPage() {
     if (res.ok) {
       const data = await res.json();
       setAuditLogs(data.logs || []);
+    }
+  }
+
+  async function fetchLeadershipTeamMembers(teamSlug: string) {
+    if (!teamSlug) { setLeadershipTeamMembers([]); return; }
+    const res = await fetch(`/api/teams/members?team=${teamSlug}`);
+    if (res.ok) {
+      const data = await res.json();
+      setLeadershipTeamMembers(data.members || []);
+    }
+  }
+
+  async function handleLeadershipCreateTask() {
+    if (!leadershipNewTask.deliverable.trim() || !leadershipNewTask.team_slug) return;
+    setLeadershipSavingTask(true);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(leadershipNewTask),
+      });
+      if (res.ok) {
+        setShowLeadershipAddTask(false);
+        setLeadershipNewTask({
+          deliverable: "", workstream: "", status: "OPEN", owner: "", priority: "MEDIUM",
+          due_date: "", notes: "", category: "", team_slug: "",
+        });
+        setLeadershipTeamMembers([]);
+        await fetchData("leadership");
+      }
+    } finally {
+      setLeadershipSavingTask(false);
     }
   }
 
@@ -259,6 +298,145 @@ export default function DashboardPage() {
                   <h2 className="text-2xl font-bold text-white">Strategic Operations Overview</h2>
                   <p className="text-sm text-slate-500 mt-1">USD1 Strategic Dominance Roadmap — All Pillars</p>
                 </div>
+
+                {/* Leadership Add Task */}
+                {!showLeadershipAddTask ? (
+                  <button
+                    onClick={() => setShowLeadershipAddTask(true)}
+                    className="mb-6 flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 hover:scale-[1.02] transition-all"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    Add Task
+                  </button>
+                ) : (
+                  <div className="mb-6 bg-[#0d1a2d] border border-amber-500/20 rounded-xl p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-bold text-amber-400">New Leadership Task</h3>
+                      <button onClick={() => { setShowLeadershipAddTask(false); setLeadershipTeamMembers([]); }} className="text-slate-500 hover:text-white text-xs">Cancel</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Task Name *</label>
+                        <input
+                          value={leadershipNewTask.deliverable}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, deliverable: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
+                          placeholder="Enter task name..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Assign to Team *</label>
+                        <select
+                          value={leadershipNewTask.team_slug}
+                          onChange={(e) => {
+                            setLeadershipNewTask({ ...leadershipNewTask, team_slug: e.target.value, owner: "" });
+                            fetchLeadershipTeamMembers(e.target.value);
+                          }}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40"
+                        >
+                          <option value="">Select team...</option>
+                          {allTeams.map((t) => (
+                            <option key={t.slug} value={t.slug}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Owner</label>
+                        <select
+                          value={leadershipNewTask.owner}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, owner: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40"
+                          disabled={!leadershipNewTask.team_slug}
+                        >
+                          <option value="">Unassigned</option>
+                          {leadershipTeamMembers.map((m) => (
+                            <option key={m.id} value={m.display_name}>{m.display_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Priority</label>
+                        <select
+                          value={leadershipNewTask.priority}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, priority: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40"
+                        >
+                          <option value="LOW">Low</option>
+                          <option value="MEDIUM">Medium</option>
+                          <option value="HIGH">High</option>
+                          <option value="CRITICAL">Critical</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Status</label>
+                        <select
+                          value={leadershipNewTask.status}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, status: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40"
+                        >
+                          <option value="OPEN">Open</option>
+                          <option value="PLANNED">Planned</option>
+                          <option value="IN PROGRESS">In Progress</option>
+                          <option value="IN FLIGHT">In Flight</option>
+                          <option value="REVIEW">Review</option>
+                          <option value="BLOCKED">Blocked</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Due Date</label>
+                        <input
+                          type="date"
+                          value={leadershipNewTask.due_date}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, due_date: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500/40"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Category</label>
+                        <input
+                          value={leadershipNewTask.category}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, category: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
+                          placeholder="e.g. Infrastructure"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Workstream</label>
+                        <input
+                          value={leadershipNewTask.workstream}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, workstream: e.target.value })}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/40"
+                          placeholder="e.g. Phase 1"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Notes</label>
+                        <textarea
+                          value={leadershipNewTask.notes}
+                          onChange={(e) => setLeadershipNewTask({ ...leadershipNewTask, notes: e.target.value })}
+                          rows={2}
+                          className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500/40 resize-none"
+                          placeholder="Additional notes..."
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-4">
+                      <button
+                        onClick={() => { setShowLeadershipAddTask(false); setLeadershipTeamMembers([]); }}
+                        className="px-4 py-2 text-xs text-slate-400 border border-white/[0.08] rounded-lg hover:bg-white/[0.04]"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleLeadershipCreateTask}
+                        disabled={leadershipSavingTask || !leadershipNewTask.deliverable.trim() || !leadershipNewTask.team_slug}
+                        className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-lg hover:shadow-lg hover:shadow-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                      >
+                        {leadershipSavingTask ? "Creating..." : "Create Task"}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* View Toggle */}
                 <div className="flex items-center gap-1 mb-6 bg-[#0d1a2d] border border-white/[0.04] rounded-lg p-1 w-fit">
