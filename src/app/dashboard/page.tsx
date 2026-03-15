@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import TeamDashboard from "@/components/TeamDashboard";
 import ProgressRing from "@/components/ProgressRing";
 import { LeadershipTimeline } from "@/components/TimelineView";
+import DependencyView from "@/components/DependencyView";
 
 interface Team {
   id: number;
@@ -36,7 +37,7 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [allTeams, setAllTeams] = useState<Team[]>([]);
   const [activeTeamTab, setActiveTeamTab] = useState<string>("overview");
-  const [leadershipView, setLeadershipView] = useState<"overview" | "timeline">("overview");
+  const [leadershipView, setLeadershipView] = useState<"overview" | "timeline" | "dependencies">("overview");
   const router = useRouter();
 
   const fetchData = useCallback(async (teamSlug: string) => {
@@ -184,10 +185,23 @@ export default function DashboardPage() {
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
                     Timeline
                   </button>
+                  <button
+                    onClick={() => setLeadershipView("dependencies")}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold tracking-wide transition-all ${
+                      leadershipView === "dependencies"
+                        ? "bg-white/[0.08] text-white"
+                        : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                    Dependencies
+                  </button>
                 </div>
 
                 {leadershipView === "timeline" ? (
                   <LeadershipTimeline teams={allTeams} />
+                ) : leadershipView === "dependencies" ? (
+                  <DependencyView teams={allTeams} />
                 ) : (
                 <>
                 {/* Global Stats Row */}

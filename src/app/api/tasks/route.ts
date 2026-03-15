@@ -4,6 +4,32 @@ import { cookies } from "next/headers";
 import { SessionData, sessionOptions } from "@/lib/session";
 import { getDb } from "@/lib/db";
 
+function enrichTasks(db: any, tasks: any[]) {
+  // Add comment counts and dependency info to each task
+  const commentCountStmt = db.prepare("SELECT COUNT(*) as cnt FROM comments WHERE task_id = ?");
+  const dependsOnStmt = db.prepare(`
+    SELECT d.depends_on_task_id as id, t.deliverable, t.status, t.priority, team.name as team_name, team.slug as team_slug
+    FROM task_dependencies d
+    JOIN tasks t ON d.depends_on_task_id = t.id
+    JOIN teams team ON t.team_id = team.id
+    WHERE d.task_id = ?
+  `);
+  const blockingStmt = db.prepare(`
+    SELECT d.task_id as id, t.deliverable, t.status, t.priority, team.name as team_name, team.slug as team_slug
+    FROM task_dependencies d
+    JOIN tasks t ON d.task_id = t.id
+    JOIN teams team ON t.team_id = team.id
+    WHERE d.depends_on_task_id = ?
+  `);
+
+  return tasks.map((task: any) => ({
+    ...task,
+    comment_count: (commentCountStmt.get(task.id) as any).cnt,
+    depends_on: dependsOnStmt.all(task.id),
+    blocking: blockingStmt.all(task.id),
+  }));
+}
+
 export async function GET(req: NextRequest) {
   const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
   if (!session.isLoggedIn) {
@@ -19,18 +45,18 @@ export async function GET(req: NextRequest) {
       const team = db.prepare("SELECT id FROM teams WHERE slug = ?").get(teamSlug) as any;
       if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
       const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(team.id);
-      return NextResponse.json({ tasks });
+      return NextResponse.json({ tasks: enrichTasks(db, tasks) });
     }
     // All tasks grouped
     const teams = db.prepare("SELECT id, name, slug, pillar, description FROM teams WHERE slug != 'leadership'").all();
     const allData = (teams as any[]).map((team: any) => {
       const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(team.id);
-      return { ...team, tasks };
+      return { ...team, tasks: enrichTasks(db, tasks) };
     });
     return NextResponse.json({ teams: allData });
   }
 
   // Regular team sees only their tasks
   const tasks = db.prepare("SELECT * FROM tasks WHERE team_id = ? ORDER BY id").all(session.teamId);
-  return NextResponse.json({ tasks });
+  return NextResponse.json({ tasks: enrichTasks(db, tasks) });
 }
