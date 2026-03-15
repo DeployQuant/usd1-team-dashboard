@@ -46,6 +46,7 @@ export default function TeamDashboard({
   const [tasks, setTasks] = useState(initialTasks);
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterCategory, setFilterCategory] = useState("ALL");
+  const [filterPriority, setFilterPriority] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
   const categories = useMemo(() => {
@@ -65,11 +66,12 @@ export default function TeamDashboard({
         if (group && !group.statuses.includes(t.status)) return false;
       }
       if (filterCategory !== "ALL" && t.category !== filterCategory) return false;
+      if (filterPriority !== "ALL" && t.priority !== filterPriority) return false;
       if (searchQuery && !t.deliverable.toLowerCase().includes(searchQuery.toLowerCase()) &&
           !t.owner.toLowerCase().includes(searchQuery.toLowerCase())) return false;
       return true;
     });
-  }, [tasks, filterGroup, filterCategory, searchQuery]);
+  }, [tasks, filterGroup, filterCategory, filterPriority, searchQuery]);
 
   const stats = useMemo(() => {
     const total = tasks.length;
@@ -314,6 +316,17 @@ export default function TeamDashboard({
           {dropdownOptions.map((opt) => (
             <option key={opt.value} value={opt.value} className="bg-[#0d1a2d]">{opt.label}</option>
           ))}
+        </select>
+        <select
+          value={filterPriority}
+          onChange={(e) => setFilterPriority(e.target.value)}
+          className="px-3 py-2.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+        >
+          <option value="ALL" className="bg-[#0d1a2d]">All Priorities</option>
+          <option value="CRITICAL" className="bg-[#0d1a2d]">Critical</option>
+          <option value="HIGH" className="bg-[#0d1a2d]">High</option>
+          <option value="MEDIUM" className="bg-[#0d1a2d]">Medium</option>
+          <option value="LOW" className="bg-[#0d1a2d]">Low</option>
         </select>
         <select
           value={filterCategory}
