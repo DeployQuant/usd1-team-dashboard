@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import TaskCard from "./TaskCard";
 import ProgressRing from "./ProgressRing";
+import TimelineView from "./TimelineView";
 
 interface Task {
   id: number;
@@ -48,6 +49,7 @@ export default function TeamDashboard({
   const [filterCategory, setFilterCategory] = useState("ALL");
   const [filterPriority, setFilterPriority] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"tasks" | "timeline">("tasks");
 
   const categories = useMemo(() => {
     const cats = new Set(tasks.map((t) => t.category).filter(Boolean));
@@ -241,6 +243,36 @@ export default function TeamDashboard({
         </button>
       </div>
 
+      {/* View Toggle */}
+      <div className="flex items-center gap-1 mb-6 bg-[#0d1a2d] border border-white/[0.04] rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setViewMode("tasks")}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold tracking-wide transition-all ${
+            viewMode === "tasks"
+              ? "bg-white/[0.08] text-white"
+              : "text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+          Tasks
+        </button>
+        <button
+          onClick={() => setViewMode("timeline")}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md text-xs font-semibold tracking-wide transition-all ${
+            viewMode === "timeline"
+              ? "bg-white/[0.08] text-white"
+              : "text-slate-500 hover:text-slate-300"
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+          Timeline
+        </button>
+      </div>
+
+      {viewMode === "timeline" ? (
+        <TimelineView tasks={tasks} />
+      ) : (
+      <>
       {/* Status Distribution Bar */}
       <div className="bg-[#0d1a2d] border border-white/[0.04] rounded-xl p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
@@ -377,6 +409,8 @@ export default function TeamDashboard({
           ))
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }
