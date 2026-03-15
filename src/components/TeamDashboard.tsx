@@ -121,19 +121,18 @@ export default function TeamDashboard({
     "PENDING AUDIT": "bg-orange-400",
   };
 
-  // Build dropdown options: grouped buckets first, then individual raw statuses
+  // Build dropdown options: always show all grouped buckets
   const dropdownOptions = useMemo(() => {
     const options: { value: string; label: string; isGroup: boolean }[] = [];
     for (const [key, config] of Object.entries(STATUS_GROUPS)) {
       const count = tasks.filter((t) => config.statuses.includes(t.status)).length;
-      if (count > 0) {
-        const subLabels = config.statuses.filter((s) => rawStatuses.has(s));
-        options.push({
-          value: key,
-          label: `${config.label} (${count}) — ${subLabels.join(", ")}`,
-          isGroup: true,
-        });
-      }
+      const subLabels = config.statuses.filter((s) => rawStatuses.has(s));
+      const suffix = subLabels.length > 0 ? ` — ${subLabels.join(", ")}` : "";
+      options.push({
+        value: key,
+        label: `${config.label} (${count})${suffix}`,
+        isGroup: true,
+      });
     }
     return options;
   }, [tasks, rawStatuses]);
