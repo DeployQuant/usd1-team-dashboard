@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import TaskCard from "./TaskCard";
 import ProgressRing from "./ProgressRing";
 import TimelineView from "./TimelineView";
@@ -38,13 +38,20 @@ export default function TeamDashboard({
   teamName,
   pillar,
   readOnly = false,
+  onRefresh,
 }: {
   tasks: Task[];
   teamName: string;
   pillar: string;
   readOnly?: boolean;
+  onRefresh?: () => void;
 }) {
   const [tasks, setTasks] = useState(initialTasks);
+
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
+
   const [filterGroup, setFilterGroup] = useState("ALL");
   const [filterCategory, setFilterCategory] = useState("ALL");
   const [filterPriority, setFilterPriority] = useState("ALL");
@@ -403,6 +410,7 @@ export default function TeamDashboard({
               key={task.id}
               task={task}
               onUpdate={handleUpdate}
+              onDepsChange={onRefresh}
               readOnly={readOnly}
               forceExpand={isBlocked}
             />

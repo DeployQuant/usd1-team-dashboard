@@ -348,6 +348,7 @@ export default function DashboardPage() {
                   teamName={allTeams.find((t) => t.slug === activeTeamTab)?.name || ""}
                   pillar={allTeams.find((t) => t.slug === activeTeamTab)?.pillar || ""}
                   readOnly={false}
+                  onRefresh={() => fetchData("leadership")}
                 />
               </>
             )}
@@ -393,6 +394,7 @@ export default function DashboardPage() {
               tasks={tasks}
               teamName={session.team.name}
               pillar={session.team.pillar || ""}
+              onRefresh={() => fetchData(session.team.slug)}
             />
           </>
         )}
